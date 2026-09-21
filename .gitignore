@@ -1,0 +1,13 @@
+# 依赖
+node_modules/
+package-lock.json
+*.tgz
+
+# 运行数据 —— 由 `dsh-pet-ccswitch install` 生成，不入库
+# （插件 65MB、Electron 300MB+、以及你的配置/对话记忆都在里面）
+app/
+plugin/
+electron/
+user/
+logs/
+runtime.json

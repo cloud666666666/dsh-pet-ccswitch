@@ -1,0 +1,39 @@
+{
+  "name": "dsh-pet-ccswitch",
+  "version": "1.0.0",
+  "description": "把 dsh-pet 桌宠从 DeepSeek Harness 里独立出来：跟着 CC Switch 起落，头顶气泡显示今日 token 用量与账户余额，右键可打开 CC Switch、点播档位动画、碎碎念与对话",
+  "type": "module",
+  "bin": {
+    "dsh-pet-ccswitch": "bin/cli.mjs"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "os": [
+    "win32"
+  ],
+  "dependencies": {
+    "dsh-pet": "^0.2.11",
+    "@electron/get": "^5.1.0"
+  },
+  "keywords": [
+    "dsh-pet",
+    "desktop-pet",
+    "cc-switch",
+    "claude-code",
+    "token-usage",
+    "electron",
+    "windows"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloud666666666/dsh-pet-ccswitch.git"
+  },
+  "author": "Joker.Yun"
+}

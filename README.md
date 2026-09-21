@@ -16,8 +16,12 @@
 ## 安装
 
 ```sh
-npx dsh-pet-ccswitch install
+npx github:cloud666666666/dsh-pet-ccswitch install
 ```
+
+> 包**尚未发布到 npm registry**，所以 `npx dsh-pet-ccswitch` 暂时不通；用上面的 `github:` 写法
+> 效果完全一样（npm 会直接从仓库拉取）。**下文所有 `npx dsh-pet-ccswitch <命令>` 在发布前
+> 都请写成 `npx github:cloud666666666/dsh-pet-ccswitch <命令>`。**
 
 `install` 会依次做完这些事（都会跳过已完成的部分，可重复跑）：
 

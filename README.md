@@ -1,5 +1,9 @@
 # dsh-pet-ccswitch 🐾
 
+<p align="center">
+  <img src="assets/preview.jpg" alt="效果预览：桌宠 + 今日 token 用量与余额气泡" width="380">
+</p>
+
 把 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet) 桌宠从 DeepSeek Harness 里**独立出来**，让它跟着 **[CC Switch](https://github.com/farion1231/cc-switch)** 过日子：
 
 - **随 CC Switch 起落** —— CC Switch 一启动，桌宠自己出现；CC Switch 一退出，桌宠跟着消失

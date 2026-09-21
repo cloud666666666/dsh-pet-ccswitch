@@ -265,16 +265,41 @@ function cmdPatch() {
 async function cmdUninstall(argv) {
   await cmdStop();
   say(removeStartupVbs() ? ok('已移除开机自启') : '- 没有开机自启项');
-  if (argv.includes('--purge')) {
-    const keep = [path.join(USER_DIR, 'main-config.json'), path.join(USER_DIR, 'memory.json')];
-    for (const f of keep) if (fs.existsSync(f)) {
-      const b = f + '.bak';
-      try { fs.copyFileSync(f, b); say(`  配置已备份到 ${b}`); } catch {}
-    }
-    fs.rmSync(HOME, { recursive: true, force: true });
-    say(ok(`已删除运行数据 ${HOME}`));
-  } else {
+
+  if (!argv.includes('--purge')) {
     say(`运行数据保留在 ${HOME}（配置/记忆都在；要删加 --purge）`);
+    return;
+  }
+
+  // 先把配置/记忆备份到 HOME **之外**再删 —— 备份写在 HOME 里会跟着一起被删掉，等于没备份
+  const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+  const backupDir = path.join(path.dirname(HOME), `dsh-pet-backup-${stamp}`);
+  const saved = [];
+  for (const name of ['main-config.json', 'memory.json']) {
+    const f = path.join(USER_DIR, name);
+    if (!fs.existsSync(f)) continue;
+    try {
+      fs.mkdirSync(backupDir, { recursive: true });
+      fs.copyFileSync(f, path.join(backupDir, name));
+      saved.push(name);
+    } catch (e) {
+      say(`  ! 备份 ${name} 失败：${e.message}`);
+    }
+  }
+  say(`  配置/记忆已备份到 ${backupDir}${saved.length ? '（' + saved.join('、') + '）' : '（无文件可备份）'}`);
+
+  try {
+    fs.rmSync(HOME, { recursive: true, force: true });
+  } catch (e) {
+    say(bad(`删除时报错：${e.message}`));
+  }
+  if (fs.existsSync(HOME)) {
+    // 从 HOME/app 里跑的时候，删不掉自己所在的目录是正常的，不该假装成功
+    const left = fs.readdirSync(HOME).join('、') || '(空)';
+    say(`部分残留：${left}`);
+    say('（多半是正在运行的这份 CLI 自身所在目录，手工删掉即可）');
+  } else {
+    say(ok(`已删除运行数据 ${HOME}`));
   }
 }
 

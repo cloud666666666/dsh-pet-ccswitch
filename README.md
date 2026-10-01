@@ -29,13 +29,21 @@ npx github:cloud666666666/dsh-pet-ccswitch install
 
 `install` 会依次做完这些事（都会跳过已完成的部分，可重复跑）：
 
-1. 准备 `dsh-pet` 插件（首次从 npm 拉，约 65MB）
+1. 准备 `dsh-pet` 插件（首次从 npm 拉，约 65MB；`package.json` 里的版本和已装的对不上时会自动重拷）
 2. 给它的产物打补丁（把气泡改成用量视图、菜单指向 CC Switch）
 3. 准备 Electron（首次约 100MB；已有则跳过）
 4. 把代码同步到 `%LOCALAPPDATA%\dsh-pet\app`（这样 `npx` 的临时目录删掉也不影响）
 5. 注册开机自启，并立刻启动
 
 **要求**：Windows + Node.js ≥ 22.5 + 已经装好并运行过 CC Switch。
+
+## 升级
+
+两条独立的线：
+
+- **升级工具本身**：重新跑一遍 `install` 即可，`npx github:` 每次都拉最新 `main`。
+- **升级 dsh-pet 本身**：改 `package.json` 里 `dsh-pet` 的版本（当前 `^0.3.1`；注意 0.x 的 `^` 只放行同一个 minor，`^0.2.11` 装不到 `0.3.x`），提交推送后重新 `install`。
+  跨版本前先确认补丁还认不认得上游产物 —— 认不出会告警并退化成原版行为（气泡变回单行余额、菜单指向 DSH），不会把桌宠搞坏；补丁表见 `lib/patch.mjs`，必要时对着新产物改锚点。
 
 ## 命令
 

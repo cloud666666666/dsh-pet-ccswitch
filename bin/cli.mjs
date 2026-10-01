@@ -138,16 +138,31 @@ async function ensureElectron() {
   }
 }
 
-/** 备好 plugin：没有就从已安装的 dsh-pet 拷一份（npm 依赖里就带着） */
+/** 读某个目录里 dsh-pet 的版本号（读不到返回 null） */
+function pluginVersion(dir) {
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).version || null; }
+  catch { return null; }
+}
+
+/** 备好 plugin：没有就从已安装的 dsh-pet 拷一份（npm 依赖里就带着）；版本变了也重拷一遍 */
 async function ensurePlugin() {
-  if (fs.existsSync(HELPER_ENTRY)) return { ok: true, note: '已存在' };
   let src = null;
   try {
     const req = (await import('node:module')).createRequire(path.join(CODE_DIR, 'package.json'));
     src = path.dirname(req.resolve('dsh-pet/package.json'));
   } catch { /* 没装依赖 */ }
+
+  if (fs.existsSync(HELPER_ENTRY)) {
+    const have = pluginVersion(PLUGIN_DIR);
+    const want = src ? pluginVersion(src) : null;
+    // 依赖里的版本和已装的对不上 = 升级/降级：重拷一份（补丁会被随后的步骤重打）
+    if (!want || want === have) return { ok: true, note: `已存在（dsh-pet ${have ?? '版本未知'}）` };
+    say(`  dsh-pet ${have ?? '版本未知'} → ${want}，重新拷贝…`);
+  } else if (src) {
+    say(`  从 ${src} 复制 dsh-pet（约 65MB，仅首次）…`);
+  }
+
   if (!src) return { ok: false, note: '找不到 dsh-pet（请先 npm install，或把 dsh-pet 放到 ' + PLUGIN_DIR + '）' };
-  say(`  从 ${src} 复制 dsh-pet（约 65MB，仅首次）…`);
   fs.rmSync(PLUGIN_DIR, { recursive: true, force: true });
   fs.cpSync(src, PLUGIN_DIR, { recursive: true });
   return { ok: fs.existsSync(HELPER_ENTRY), note: fs.existsSync(HELPER_ENTRY) ? '复制完成' : '复制后仍缺入口文件' };

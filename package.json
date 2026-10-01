@@ -1,6 +1,6 @@
 {
   "name": "dsh-pet-ccswitch",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "把 dsh-pet 桌宠从 DeepSeek Harness 里独立出来：跟着 CC Switch 起落，头顶气泡显示今日 token 用量与账户余额，右键可打开 CC Switch、点播档位动画、碎碎念与对话",
   "type": "module",
   "bin": {
@@ -19,7 +19,7 @@
     "win32"
   ],
   "dependencies": {
-    "dsh-pet": "^0.2.11",
+    "dsh-pet": "^0.3.1",
     "@electron/get": "^5.1.0"
   },
   "keywords": [

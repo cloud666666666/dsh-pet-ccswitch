@@ -383,14 +383,68 @@ async function cmdRaiseConfig(argv) {
 }
 
 /**
+ * 导入一份 qqpet 存档（把那边养着的宠物搬过来）。
+ * 宿主跑着的话先停下来 —— 它内存里那份状态会在下一次落盘时把导入的文件盖回去。
+ */
+async function cmdRaiseImport(argv) {
+  const file = argv.find((a) => !a.startsWith('--'));
+  if (!file) return say(bad('用法：npx dsh-pet-ccswitch raise import <qqpet 的 save.json 或原版 config.json>'));
+  if (!fs.existsSync(file)) return say(bad('找不到文件：' + file));
+  const port = await import('../lib/raise/port.mjs');
+  const wasAlive = await hostAlive();
+  if (wasAlive) {
+    say('宿主在跑，先停下来（免得它把内存里的旧状态写回去）…');
+    await cmdStop();
+  }
+  try {
+    const r = port.importInto(file);
+    say(ok(`已导入：${r.summary.name}（${r.summary.sex === 'GG' ? '男' : '女'}）Lv.${r.summary.level} · 成长 ${r.summary.growth} · 元宝 ${r.summary.yb}`));
+    say(`  背包 ${r.summary.items} 件 · 邮件 ${r.summary.mails} 封 · 鱼塘 ${r.summary.fish} 条`);
+    for (const n of r.notes) say('  · ' + n);
+    if (r.backup) say(`  原有存档已备份到 ${r.backup}（想换回来把它拷回 raise.json 即可）`);
+  } catch (e) {
+    say(bad('导入失败：' + e.message));
+    if (wasAlive) {
+      say('把宿主启动回来…');
+      await cmdStart();
+    }
+    return;
+  }
+  if (wasAlive) {
+    say('启动宿主…');
+    await cmdStart();
+  } else {
+    say('（宿主没在跑，等 CC Switch 启动时生效）');
+  }
+}
+
+/** 导出当前存档（字段与 qqpet 一致，可以直接丢回它的 userData 接着养） */
+async function cmdRaiseExport(argv) {
+  const file = argv.find((a) => !a.startsWith('--')) || `raise-export-${new Date().toISOString().slice(0, 10)}.json`;
+  const port = await import('../lib/raise/port.mjs');
+  try {
+    const r = port.exportTo(file);
+    say(ok(`已导出到 ${r.file}（${r.pet} Lv.${r.level}）`));
+    say('  字段与 qqpet 一致：丢进它的 userData 目录（文件名 save.json）就能在那边接着养');
+    if (await hostAlive()) say('  注意：宿主在跑，导出的是最近一次落盘的状态（最多差 30 秒）');
+  } catch (e) {
+    say(bad('导出失败：' + e.message));
+  }
+}
+
+/**
  * 养成：看状态，也可以直接在命令行上动手（等于点右键菜单里那一项）。
  *   npx dsh-pet-ccswitch raise                      看宠物状态
  *   npx dsh-pet-ccswitch raise status|talk|doctor…  执行一个动作（动作名 = 菜单叶子上的 raise 串）
- *   npx dsh-pet-ccswitch raise config [k=v …]       看/改养成配置（日历、天气、汇率…）
+ *   npx dsh-pet-ccswitch raise config [k=v …]       看/改养成配置（日历、天气、汇率、工作联动…）
+ *   npx dsh-pet-ccswitch raise import <存档>        把 qqpet 养的宠物搬过来
+ *   npx dsh-pet-ccswitch raise export [文件]        导出一份能丢回 qqpet 的存档
  *   npx dsh-pet-ccswitch raise --menu               把当前菜单树打出来（排障用）
  */
 async function cmdRaise(argv) {
   if (argv[0] === 'config') return cmdRaiseConfig(argv.slice(1));
+  if (argv[0] === 'import') return cmdRaiseImport(argv.slice(1));
+  if (argv[0] === 'export') return cmdRaiseExport(argv.slice(1));
   if (!(await hostAlive())) {
     say(bad('宿主没在运行。先 `npx dsh-pet-ccswitch start`（或让 CC Switch 跑起来）'));
     return;
@@ -414,6 +468,7 @@ async function cmdRaise(argv) {
   const s = await pick('/raise/state');
   if (!s.ok) return say(bad(s.message || '拿不到养成状态'));
   say(s.text);
+  if (s.link?.text) say(`\n🧹 ${s.link.text}`); // 宿主已经把这句话序列化成字符串了（可能是多行）
   const t = s.tokens || {};
   say(`\n待弹气泡 ${s.pending} 条${t.tokens ? `　上次结算后新增 ${t.tokens} token` : ''}`);
   if (argv.includes('--menu')) say('\n' + JSON.stringify(s.menu, null, 1));

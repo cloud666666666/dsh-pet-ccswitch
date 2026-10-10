@@ -797,6 +797,117 @@ const ddw0 = countOf2(rdead.st, 'Amusing');
 rdead.act('pet:click');
 check('死了以后点它不计「逗逗我」', countOf2(rdead.st, 'Amusing') === ddw0, `${ddw0} → ${countOf2(rdead.st, 'Amusing')}`);
 
+// 22) 与 qqpet 的存档互通（导入 / 导出）
+const port = await import(url('lib/raise/port.mjs'));
+const qqpetSave = {
+  havePet: true,
+  isBury: false,
+  saveNum: 12,
+  nowTimeLine: Math.floor(Date.now() / 1000) - 86400,
+  petInfo: { name: '老宠物', host: '主人~', sex: 'MM', growth: 4500, hunger: 900, clean: 800, health: 5, mood: 700, birthDay: 1700000000, intel: 30, charm: 20, strong: 40, yb: 7777, onLineTime: 100, lastX: -1, lastY: -1, lastLoginTime: 0, onlineDataTime: 0, pinkDiamond: false, sweetHeart: false },
+  petComputedlInfo: { level: 7, upGrowth: 3000, nextGrowth: 5000, hungerMax: 2000, cleanMax: 2000, healthMax: 5, moodMax: 1000 },
+  studyInfo: { chinese: 3, mathematics: 0, politics: 0, music: 0, art: 0, manner: 0, pe: 0, labouring: 0, wushu: 0 },
+  activeOption: { work: 'bz', study: null, trip: null, ill: null, die: null },
+  selfGoodDatas: { food: ['_10013006*2'], clean: [], medicine: [], background: [], service: [], work: [], study: [], trip: [], toy: [], nums: [] },
+  selfGoodUseOption: { background: null, food: null, clean: null, toy: null },
+  gameSaveDatas: { fishing_harvestfish: 12, travel_china: [{ name: '北京市', value: 2 }], travel_china_num: 1, ddw: 3, yyds: 0 },
+  illustrated: ['10013006'],
+  saveJsonData: { email: '{}', task: '{}', signin: '{}', fishs: '{}' },
+  settings: { opacity: 1, music: 0.5, faceClick: 2, quiet: true, autoStart: true, paused: false, hidden: false, hd: true, clip: false, watchApp: false, aiUrl: 'http://x', aiKey: 'k', aiModel: 'm', weatherCity: '北京' },
+};
+const imported = port.fromQqpet(qqpetSave);
+check('导入：宠物本体照搬（名字/性别/等级/元宝）', imported.save.petInfo.name === '老宠物' && imported.save.petInfo.sex === 'MM' && imported.save.petInfo.yb === 7777);
+check('导入：丢掉了这边没有的界面设置', !('opacity' in imported.save.settings) && !('aiKey' in imported.save.settings) && imported.save.settings.quiet === true);
+check('导入：清掉进行中的打工（免得一启动就瞬间算完）', imported.save.activeOption.work === null && imported.notes.some((n) => n.includes('正在进行的事')));
+check('导入：水位重置（不算饿/脏，也不把已有 token 一次算成收益）', imported.save.lastTick === null && imported.save.lastTokenTs > 0);
+
+const qqPath = path.join(HOME, 'user', '来自qqpet.json');
+fs.writeFileSync(qqPath, JSON.stringify(qqpetSave));
+freshRaise().st.flush(true); // 先有一只存过档的宠物，才谈得上"导入前备份"
+const roundIn = port.importInto(qqPath);
+check('导入到存档：宠物与到访记录都在', (() => {
+  const s = JSON.parse(fs.readFileSync(path.join(HOME, 'user', 'raise.json'), 'utf8'));
+  return s.petInfo.name === '老宠物' && s.gameSaveDatas.travel_china.length === 1 && s.saveJsonData.signin === '{}';
+})(), JSON.stringify(roundIn.summary));
+check('导入前会备份原存档', Boolean(roundIn.backup) && fs.existsSync(roundIn.backup));
+
+const expPath = path.join(HOME, 'user', '导出.json');
+const exp = port.exportTo(expPath);
+check('导出：文件里没有我们自己的字段', (() => {
+  const j = JSON.parse(fs.readFileSync(expPath, 'utf8'));
+  return !('lastTick' in j) && !('lastTokenTs' in j) && j.petInfo.name === '老宠物';
+})());
+check('导出→再导入：宠物原样回来（往返不丢东西）', (() => {
+  const back = port.fromQqpet(JSON.parse(fs.readFileSync(expPath, 'utf8')));
+  return back.save.petInfo.name === '老宠物' && back.save.petComputedlInfo.level === 7 && back.save.petInfo.yb === 7777 && back.save.gameSaveDatas.travel_china.length === 1;
+})());
+check('不认的文件会明确报错（不会把存档写成垃圾）', (() => {
+  const badFile = path.join(HOME, 'user', '这不是存档.json');
+  fs.writeFileSync(badFile, JSON.stringify({ hello: 'world' }));
+  try {
+    port.readImport(badFile);
+    return false;
+  } catch (e) {
+    return e.message.includes('没有宠物数据');
+  }
+})());
+
+// 23) 工作联动（工作仪表盘）：工作区脏 → 它变脏；提交 → 洗澡；请求报错 → 心情差
+const link = await import(url('lib/raise/link.mjs'));
+const { execFile } = await import('node:child_process');
+const { promisify } = await import('node:util');
+const sh = promisify(execFile);
+const repo = path.join(HOME, 'repo');
+fs.mkdirSync(repo, { recursive: true });
+const gitRun = (args) => sh('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { windowsHide: true });
+
+await gitRun(['init', '-q']);
+fs.writeFileSync(path.join(repo, 'a.txt'), 'hello');
+const rows1 = await link.gitSample([repo]);
+check('采样：新文件算未提交改动', rows1[0].dirty === 1 && rows1[0].name === 'repo', JSON.stringify(rows1[0]));
+const eff1 = link.gitEffect(rows1, {});
+check('工作区脏 → 清洁往下掉', eff1.clean < 0 && eff1.say.includes('改动没提交'), JSON.stringify(eff1));
+check('脏得越多掉得越多（有上限）', link.gitEffect([{ repo, dirty: 100, head: 'x' }], {}).clean === -20);
+
+await gitRun(['add', '.']);
+await gitRun(['commit', '-q', '-m', 'first']);
+const rows2 = await link.gitSample([repo]);
+check('提交之后工作区干净了', rows2[0].dirty === 0 && rows2[0].head.length >= 7, JSON.stringify(rows2[0]));
+check('干净时清洁慢慢回一点', link.gitEffect(rows2, {}).clean > 0);
+
+fs.writeFileSync(path.join(repo, 'b.txt'), 'world');
+await gitRun(['add', '.']);
+await gitRun(['commit', '-q', '-m', 'second']);
+const rows3 = await link.gitSample([repo]);
+const eff3 = link.gitEffect(rows3, { [repo]: rows2[0].head });
+check('认出「刚提交了」→ 清洁 +15、心情 +5，并说一句', eff3.clean === 15 && eff3.mood === 5 && eff3.say.includes('提交了'), JSON.stringify(eff3));
+
+check('findRepos：给仓库本身就用它', link.findRepos(repo).length === 1);
+check('findRepos：给"装着项目的目录"会扫一层子目录', link.findRepos(HOME).includes(repo), JSON.stringify(link.findRepos(HOME)));
+check('findRepos：路径不存在就当没配', link.findRepos(path.join(HOME, '没有这个目录')).length === 0);
+
+check('错误率：样本太少不折腾', link.errorEffect({ n: 2, bad: 2 }).skip === true);
+check('错误率：全成功 → 心情回一点', link.errorEffect({ n: 100, bad: 0 }).mood === 3);
+check('错误率：一半失败 → 掉满 20 并值得说一句', (() => {
+  const e = link.errorEffect({ n: 100, bad: 50 });
+  return e.mood === -20 && e.worry === true;
+})());
+check('错误率：偶尔几个错 → 掉一点但不唠叨', (() => {
+  const e = link.errorEffect({ n: 100, bad: 6 });
+  return e.mood === -4 && e.worry === false;
+})());
+
+// 端到端：脏工作区真能把宠物弄脏
+const rlink = freshRaise();
+fs.writeFileSync(path.join(repo, 'c.txt'), 'dirty');
+const lk = link.createLink({ st: rlink.st, repo, everyMs: 60_000, log: () => {} });
+if (typeof lk.start === 'function') await lk.sample({ apply: false });
+const clean0 = rlink.st.info.clean;
+await lk.sample();
+check('端到端：工作区脏 → 宠物清洁真的掉了', rlink.st.info.clean < clean0, `${clean0} → ${rlink.st.info.clean}`);
+check('气泡上会多一行「工作区 … 处未提交」', (rlink.st.linkState.git.length > 0 ? lk.line() || '' : '').includes('未提交'), String(lk.line()));
+check('「工作区状态」那句话能念出来', lk.text().includes('repo'), lk.text());
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

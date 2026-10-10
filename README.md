@@ -13,7 +13,10 @@
   打工、上学（含升学考试）、全国旅游、今日任务、签到、邮件、图鉴、粉钻、池塘养鱼都齐了
 - **只吃 token 长个**：成长值全部来自 CC Switch 里新增的 token，挂机不长（`PET_RAISE_NATURAL=on` 可以改回原版那种"陪着就长大"）——
   你写代码它吃饭，不写代码它就只是饿着等着
+- **工作联动**：它还是块状态牌 —— **工作区有未提交改动它就变脏，提交了就等于洗了个澡**；
+  最近请求报错多它就闹情绪。配一个仓库路径（或装着项目的目录）即可
 - **右键菜单**：打开 CC Switch / 查看用量与余额 / 碎碎念 / 对话 / 点播任意动画 / **一整棵养成菜单**
+- **存档互通**：能把你在 [qqpet](https://github.com/AnkioTomas/qqpet) 里养着的宠物直接搬过来继续养（也能导回去）
 - 档位动画按**账户余额**分档（默认 ¥0~1000 分 6 档：钱袋满溢 → 分文不剩）
 
 > 数据**一切以 CC Switch 为准**：不在本地另建一套账，而是直接读它的 `cc-switch.db`，
@@ -49,7 +52,7 @@ npx github:cloud666666666/dsh-pet-ccswitch install
 | `npx dsh-pet-ccswitch install` | 准备环境 + 注册自启 + 启动 |
 | `npx dsh-pet-ccswitch start` / `stop` / `restart` | 启停宿主（宿主会带着桌宠一起）；`stop` 连**孤儿桌宠窗口**一起收 —— 宿主被强杀或手动起过实例时，桌面上可能留下不认宿主的第二只 |
 | `npx dsh-pet-ccswitch status` | 看宿主/CC Switch 状态、**桌宠窗口数**（多于 1 会明确报警）、今日用量、余额、宠物状态 |
-| `npx dsh-pet-ccswitch raise` | 看宠物养成状态（`raise 喂食动作串` 可直接在命令行上喂它，见下） |
+| `npx dsh-pet-ccswitch raise` | 看宠物养成状态（`raise <动作串>` 可直接在命令行上喂它；`raise config/import/export` 见下） |
 | `npx dsh-pet-ccswitch doctor` | 自检：CC Switch 在哪、库能不能读、缺什么 |
 | `npx dsh-pet-ccswitch patch` | 升级 dsh-pet 后重新打补丁 |
 | `npx dsh-pet-ccswitch uninstall [--purge]` | 移除自启（`--purge` 连运行数据一起删，配置会先备份） |
@@ -61,6 +64,9 @@ npx dsh-pet-ccswitch raise status          # 让它报一遍状态（也会弹�
 npx dsh-pet-ccswitch raise use:food:102010001   # 喂一个圈圈冰激凌
 npx dsh-pet-ccswitch raise doctor          # 看病（诊费+开药）
 npx dsh-pet-ccswitch raise trip            # 出门旅游
+npx dsh-pet-ccswitch raise link:state      # 让它把各仓库的未提交数量念一遍
+npx dsh-pet-ccswitch raise config          # 看/改养成配置（日历、天气、工作联动、汇率）
+npx dsh-pet-ccswitch raise import <存档>   # 把 qqpet 养的宠物搬过来
 npx dsh-pet-ccswitch raise --menu          # 把当前菜单树打出来（里面有所有动作串）
 ```
 
@@ -90,6 +96,8 @@ npx dsh-pet-ccswitch raise --menu          # 把当前菜单树打出来（里�
 | 邮件 | 欢迎信、生日信、节假日信、旅游明信片；附件点一下就进背包 |
 | 贵族 | 粉钻（首开 666 元宝/5 天，之后等级×888）：成长 +10/小时、买东西八折、签到多抽一次、池塘加速；贴心宝贝（300 元宝/天）：宠物会自己照顾自己，成长 +10% |
 | 池塘养鱼 | 16 种鱼苗（等级门槛 0~45），2~3 小时长一档，10 元宝喂一小时，熟了按售价收，收满 1000 条「养鱼大师」 |
+| 工作联动 | 把工作区状态接进属性：**工作区脏 = 它脏**（每 5 分钟最多掉 20 点清洁），**提交 = 洗澡**（清洁 +15、心情 +5），**请求报错多 = 心情差**（错误率越高掉得越多）。见下 |
+| 存档互通 | `raise import` / `raise export`：与 qqpet 的存档格式一致，来回搬不丢东西 |
 
 **token 怎么变成成长值与元宝**
 
@@ -198,6 +206,10 @@ CC Switch  ←── 读 cc-switch.db（用量/服务商/usage_script）──�
 | `PET_RAISE_CALENDAR` | `off` | `holiday-cn`（推荐）或 `ankio` 才联网取节假日，见下 |
 | `PET_RAISE_WEATHER` | `off` | 设 `on` 才联网播报天气（走 wttr.in） |
 | `PET_RAISE_WEATHER_CITY` | 空 | 天气播报的城市，空 = 按 IP 定位 |
+| `PET_RAISE_LINK_REPO` | 空 | 工作联动盯的仓库路径（或装着项目的目录）；空 = 不启用 |
+| `PET_RAISE_LINK_GIT` | `on` | 工作区脏 → 它变脏（提交 = 洗澡） |
+| `PET_RAISE_LINK_ERRORS` | `on` | 请求错误率影响心情 |
+| `PET_RAISE_LINK_EVERY` | `300` | 工作联动的采样间隔（秒） |
 
 上面这些也可以写进**配置文件** `%LOCALAPPDATA%\dsh-pet\user\raise-config.json`，
 优先级是 **配置文件 > 环境变量 > 默认值**。日常改配置不用碰环境变量：
@@ -205,8 +217,41 @@ CC Switch  ←── 读 cc-switch.db（用量/服务商/usage_script）──�
 ```sh
 npx dsh-pet-ccswitch raise config                                # 看当前生效值（标出每个值来自哪一级）
 npx dsh-pet-ccswitch raise config calendar=holiday-cn weather=on  # 改（写进配置文件）
+npx dsh-pet-ccswitch raise config linkRepo=D:\Project             # 工作联动：接上工作区（也可以给装着项目的目录）
 npx dsh-pet-ccswitch restart                                     # 重启生效
 ```
+
+## 工作联动（把工作区接进宠物）
+
+给它一个仓库路径（或者一个装着好几个项目的目录，它会扫一层子目录），它就会盯着那里的状态：
+
+| 外部信号 | 宠物这边 | 数值 |
+| --- | --- | --- |
+| 工作区有未提交改动 | **变脏**（改动越多越快），并唠叨一句「工作区还有改动没提交…」 | 每 5 分钟最多掉 20 点清洁 |
+| 提交了（HEAD 变了） | **洗了个澡**，一身轻松 | 清洁 +15、心情 +5 |
+| 工作区全干净 | 慢慢回一点（抵掉一半的自然变脏速度） | 每 5 分钟 +10 |
+| 最近 60 分钟的请求有 4xx/5xx | **闹情绪**，错误率越高掉得越多 | 心情 −（错误率 × 60，最多 −20） |
+| 最近请求全成功 | 心情回一点 | +3 |
+
+所以「清洁」这个属性现在是双份含义：**时间会让它脏，代码不提交也会让它脏；洗澡（喂清洁用品）与提交都能让它干净**。
+右键菜单里「🧹 工作区状态（提交 = 洗澡）」点一下，它会把你各个仓库的未提交数量念一遍；状态气泡上也会多一行。
+
+采样间隔、开关都在配置里：`linkRepo` / `linkGit` / `linkErrors` / `linkEverySec`（默认 5 分钟）。
+不需要的话把 `linkGit` 或 `linkErrors` 设成 `off` 即可（`linkRepo` 留空就整块不启用）。
+
+## 存档互通（与 qqpet 互相搬）
+
+```sh
+npx dsh-pet-ccswitch raise import "%APPDATA%\QQPet\save.json"   # 把 qqpet 养的宠物搬过来
+npx dsh-pet-ccswitch raise export 我的宠物.json                  # 导出一份能丢回 qqpet 的存档
+```
+
+- 认两种来源：qqpet 的 `save.json`，以及原版 QQ 宠物的 `config.json`（宠物数据在 `petInfoData` 底下）
+- 导入是**全量替换**：现有的 `raise.json` 会先备份成 `raise.json.bak`（想换回来拷回去就行）
+- 导入时会丢掉这边没有的界面设置、清掉"导入时正在进行的打工/上课/旅游"（免得一启动就按"关掉很久"瞬间算完）、
+  重置记账水位（不会把导入前已经发生的 token 一次性算成收益）
+- 导出的是干净的 qqpet 存档（把这边特有的两个水位字段摘掉），丢进它的 userData 就能接着养
+- 宿主跑着的时候导入会先把它停掉再启动（否则内存里那份状态会在下次落盘时盖回去）
 
 ## 日历与天气（可选，要联网）
 

@@ -8,6 +8,7 @@
  * 用法：
  *   npx dsh-pet-ccswitch install     一次性准备（打补丁 / 备好 Electron / 注册开机自启）并启动
  *   npx dsh-pet-ccswitch start|stop|status|restart
+ *   npx dsh-pet-ccswitch raise       看宠物养成状态（raise <动作> 直接在命令行上喂它/看病）
  *   npx dsh-pet-ccswitch patch       升级 dsh-pet 后重新打补丁
  *   npx dsh-pet-ccswitch doctor      自检：CC Switch 在哪、库能不能读、缺什么
  *   npx dsh-pet-ccswitch uninstall   移除开机自启（--purge 连运行数据一起删）
@@ -251,6 +252,10 @@ async function cmdStatus() {
       say(`今日：${((Number(d.total) || 0) / 1e4).toFixed(0)} 万 token / ${d.toppedUp} 次请求 / $${d.granted}`);
       if (d.balances && d.balances.length) say(`余额：${d.balances.join('  ')}`);
     } catch (e) { say('取用量失败：' + e.message); }
+    try {
+      const s = await (await fetch(`http://127.0.0.1:${DEFAULT_PORT}/dsh-pet-7340/raise/state`, { signal: AbortSignal.timeout(3000) })).json();
+      if (s.ok) say('\n' + s.text);
+    } catch { /* 养成没起来就不显示 */ }
   }
 }
 
@@ -303,16 +308,51 @@ async function cmdUninstall(argv) {
   }
 }
 
+/**
+ * 养成：看状态，也可以直接在命令行上动手（等于点右键菜单里那一项）。
+ *   npx dsh-pet-ccswitch raise                      看宠物状态
+ *   npx dsh-pet-ccswitch raise status|talk|doctor…  执行一个动作（动作名 = 菜单叶子上的 raise 串）
+ *   npx dsh-pet-ccswitch raise --menu               把当前菜单树打出来（排障用）
+ */
+async function cmdRaise(argv) {
+  if (!(await hostAlive())) {
+    say(bad('宿主没在运行。先 `npx dsh-pet-ccswitch start`（或让 CC Switch 跑起来）'));
+    return;
+  }
+  const base = `http://127.0.0.1:${DEFAULT_PORT}/dsh-pet-7340`;
+  const pick = async (u) => (await fetch(base + u, { signal: AbortSignal.timeout(5000) })).json();
+
+  const args = argv.filter((a) => !a.startsWith('--'));
+  const action = args.join(':');
+  if (action) {
+    const r = await fetch(base + '/raise/act', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action }),
+      signal: AbortSignal.timeout(5000),
+    }).then((x) => x.json());
+    say(r.ok ? ok(`已执行：${action}（看桌宠那边弹什么）`) : bad(`这个动作没生效：${action}`));
+    if (!r.ok) return;
+  }
+
+  const s = await pick('/raise/state');
+  if (!s.ok) return say(bad(s.message || '拿不到养成状态'));
+  say(s.text);
+  const t = s.tokens || {};
+  say(`\n待弹气泡 ${s.pending} 条${t.tokens ? `　上次结算后新增 ${t.tokens} token` : ''}`);
+  if (argv.includes('--menu')) say('\n' + JSON.stringify(s.menu, null, 1));
+}
+
 // ---------------------------------------------------------------------------
 const [, , cmd = 'status', ...rest] = process.argv;
 const table = {
   install: cmdInstall, start: cmdStart, stop: cmdStop, status: cmdStatus,
   restart: async () => { await cmdStop(); await new Promise(r => setTimeout(r, 1200)); return cmdStart(); },
-  patch: cmdPatch, doctor: cmdDoctor, uninstall: cmdUninstall,
+  patch: cmdPatch, doctor: cmdDoctor, uninstall: cmdUninstall, raise: cmdRaise,
 };
 
 if (!table[cmd]) {
-  say('dsh-pet-ccswitch <install|start|stop|restart|status|patch|doctor|uninstall>');
+  say('dsh-pet-ccswitch <install|start|stop|restart|status|raise|patch|doctor|uninstall>');
   process.exit(1);
 }
 try { await table[cmd](rest); }

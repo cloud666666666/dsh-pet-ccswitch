@@ -49,7 +49,7 @@ const ANIMS = {
   categories: [
     { id: '吃什么', actions: ['吃大餐', '吃Token', '吃白饭'] },
     { id: '玩耍', actions: ['荡秋千', '三球抛接'] },
-    { id: '小动作', actions: ['晨间刷牙', '玩水枪', '原地小憩沉眠', '凭空生花'] },
+    { id: '小动作', actions: ['晨间刷牙', '玩水枪', '原地小憩沉眠', '凭空生花', '写代码', '轻快记录', '打瞌睡被惊醒'] },
   ],
   events: { whisper: ['碎碎念-发呆碎碎念'], balance: ['余额-钱袋满溢'], workStatus: ['工作状态-雀跃庆祝'] },
 };
@@ -75,7 +75,12 @@ function fakeMeter() {
   };
 }
 
+const activityMod = await import(url('lib/raise/activity.mjs'));
+
 function newRaise(meter = fakeMeter()) {
+  // 「当前在做的那件事」是模块级状态（production 里只有一个实例，没问题；测试里会串味）：
+  // 每个实例建之前先清掉，免得上一个用例没干完的活儿让这个用例开不了工
+  activityMod.reset();
   // achievements:false —— 成就奖励会改元宝/心情，会让"精确到个位"的那些断言飘（成就自己有专门用例）
   const r = createRaise({ animations: ANIMS, log: () => {}, achievements: false });
   r.st.tokens = () => meter.take(); // 换成假表（真表要连 CC Switch 的库）
@@ -91,6 +96,7 @@ function freshRaise() {
 
 /** 成就开着的实例（专门给成就那几条用例） */
 function achvRaise() {
+  activityMod.reset();
   fs.rmSync(path.join(HOME, 'user', 'raise.json'), { force: true });
   const meter = fakeMeter();
   const r = createRaise({ animations: ANIMS, log: () => {}, achievements: true });
@@ -1642,38 +1648,74 @@ check('旅游回来的明信片也带图', (() => {
 })());
 fs.rmSync(settings.CONFIG_FILE, { force: true });
 
-// 33) 保持姿势：上课/打工/旅游期间"看起来在忙"，生病期间"看起来蔫着"
+// 33) 保持姿势（派生出来的）+ 打工/上课/旅游互斥
 check('上课会保持"在忙"的姿势，下课就松开', (() => {
   const r = freshRaise();
   r.st.info.growth = 20000;
   r.st.syncLevel();
   r.act('study:xx-chinese');
-  const held = r.st.holdName;
+  const held = r.st.holdPose();
   advanceTask(r.st, 45); // 一节课上完
-  return Boolean(held) && r.st.holdName === '';
-})(), String(freshRaise().st.holdName));
+  return Boolean(held) && r.st.holdPose() === '';
+})(), String(freshRaise().st.holdPose()));
 check('打工 / 旅游同样保持', (() => {
   const rw = freshRaise();
   rw.st.info.growth = 20000;
   rw.st.syncLevel();
   rw.act('work:bz');
-  const workHold = rw.st.holdName;
+  const workHold = rw.st.holdPose();
   advanceTask(rw.st, 30);
   const rt = freshRaise();
   rt.act('trip');
-  const tripHold = rt.st.holdName;
+  const tripHold = rt.st.holdPose();
   advanceTask(rt.st, 60);
-  return Boolean(workHold) && Boolean(tripHold) && rw.st.holdName === '' && rt.st.holdName === '';
+  return Boolean(workHold) && Boolean(tripHold) && rw.st.holdPose() === '' && rt.st.holdPose() === '';
 })());
-check('生病时保持蔫着的姿势，治好就松开', (() => {
+check('打工中途生病：先摆病容；治好后自动回到"在忙"（不会直挺挺站着）', (() => {
   const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  const working = r.st.holdPose();
   r.st.setActivity('ill', '0-');
   r.st.setInfo('health', 4);
-  const sick = r.st.holdName;
-  r.st.setInfo('health', 5); // 治好
-  return Boolean(sick) && r.st.holdName === '';
+  const sick = r.st.holdPose();
+  r.st.setInfo('health', 5); // 治好，但这班还没下
+  const back = r.st.holdPose();
+  return Boolean(working) && sick !== working && back === working;
+})(), (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  const working = r.st.holdPose();
+  r.st.setActivity('ill', '0-');
+  r.st.setInfo('health', 4);
+  const sick = r.st.holdPose();
+  r.st.setInfo('health', 5);
+  return `在忙=${working} 病容=${sick} 治好=${r.st.holdPose()}`;
 })());
-check('重启后续上的活儿也要保持姿势', (() => {
+check('死了就别再摆"在忙"的样子', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  const working = r.st.holdPose();
+  r.st.setInfo('health', 0);
+  return Boolean(working) && r.st.holdPose() === '';
+})());
+check('心情见底导致工期中止时，姿势也没了', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  const held = Boolean(r.st.holdPose());
+  r.st.setInfo('mood', 0);
+  r.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  r.st.tick();
+  return held && r.st.holdPose() === '';
+})());
+check('重启后续上的活儿也有姿势', (() => {
   const r = freshRaise();
   r.st.info.growth = 20000;
   r.st.syncLevel();
@@ -1683,32 +1725,68 @@ check('重启后续上的活儿也要保持姿势', (() => {
   r.st.flush(true);
   const r2 = createRaise({ animations: ANIMS, log: () => {}, achievements: false }); // 换实例 = 模拟重启
   r2.start();
-  const held = r2.st.holdName;
+  const held = r2.st.holdPose();
   r2.stop();
   return Boolean(held);
-})(), String((() => {
+})());
+
+// 34) 打工 / 上课 / 旅游互斥：同一时刻只能有一件
+check('正在上课时，打工 / 旅游都开不了工', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('study:xx-chinese');
+  const before = JSON.stringify(r.st.save.activeOption);
+  r.act('work:bz');
+  r.act('trip');
+  return r.st.save.activeOption.work === null && r.st.save.activeOption.trip === null && JSON.stringify(r.st.save.activeOption) === before;
+})(), JSON.stringify(freshRaise().st.save.activeOption));
+check('开工时会把存档里残留的另一种状态抹掉（不会"同时在两件事"）', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  // 伪造一个"存档里还留着旅游"的现场（旧版本、手改、崩在两步之间都可能这样）
+  r.st.save.activeOption.trip = '北京市';
+  r.act('work:bz');
+  const ao = r.st.save.activeOption;
+  return ao.work === 'bz' && ao.trip === null && ao.study === null;
+})(), JSON.stringify((() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.st.save.activeOption.trip = '北京市';
+  r.act('work:bz');
+  return r.st.save.activeOption;
+})()));
+check('忙的时候菜单上就写明（省得连点十个工作被拒十次）', (() => {
+  const idle = freshRaise().menu().find((s) => s.label.includes('打工')).label;
   const r = freshRaise();
   r.st.info.growth = 20000;
   r.st.syncLevel();
   r.act('work:bz');
-  r.st.save.saveJsonData.activity = '10';
+  const busy = r.menu().find((s) => s.label.includes('打工')).label;
+  return !idle.includes('正在忙') && busy.includes('正在忙');
+})(), (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  return r.menu().map((s) => s.label).join(' | ');
+})());
+check('续读时也只认一件（多余的键清掉）', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.st.save.activeOption.work = 'bz';
+  r.st.save.activeOption.trip = '北京市'; // 伪造双状态
+  r.st.save.saveJsonData.activity = '5';
   r.st.flush(true);
   const r2 = createRaise({ animations: ANIMS, log: () => {}, achievements: false });
   r2.start();
-  const h = r2.st.holdName;
+  const ao = r2.st.save.activeOption;
+  const one = ['work', 'study', 'trip'].filter((k) => ao[k]).length;
   r2.stop();
-  return h;
-})()));
-check('心情见底导致工期中止时，姿势也得松开', (() => {
-  const r = freshRaise();
-  r.st.info.growth = 20000;
-  r.st.syncLevel();
-  r.act('work:bz');
-  const held = Boolean(r.st.holdName);
-  r.st.setInfo('mood', 0); // 心情见底 → 结算时 stopTask
-  r.st.lastTick = Math.floor(Date.now() / 1000) - 60;
-  r.st.tick();
-  return held && r.st.holdName === '';
+  return one === 1;
 })());
 
 // ---------------------------------------------------------------------------

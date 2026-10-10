@@ -76,7 +76,8 @@ function fakeMeter() {
 }
 
 function newRaise(meter = fakeMeter()) {
-  const r = createRaise({ animations: ANIMS, log: () => {} });
+  // achievements:false —— 成就奖励会改元宝/心情，会让"精确到个位"的那些断言飘（成就自己有专门用例）
+  const r = createRaise({ animations: ANIMS, log: () => {}, achievements: false });
   r.st.tokens = () => meter.take(); // 换成假表（真表要连 CC Switch 的库）
   r.fake = meter;
   return r;
@@ -86,6 +87,16 @@ function newRaise(meter = fakeMeter()) {
 function freshRaise() {
   fs.rmSync(path.join(HOME, 'user', 'raise.json'), { force: true });
   return newRaise();
+}
+
+/** 成就开着的实例（专门给成就那几条用例） */
+function achvRaise() {
+  fs.rmSync(path.join(HOME, 'user', 'raise.json'), { force: true });
+  const meter = fakeMeter();
+  const r = createRaise({ animations: ANIMS, log: () => {}, achievements: true });
+  r.st.tokens = () => meter.take();
+  r.fake = meter;
+  return r;
 }
 
 // ---------------------------------------------------------------------------
@@ -907,6 +918,124 @@ await lk.sample();
 check('端到端：工作区脏 → 宠物清洁真的掉了', rlink.st.info.clean < clean0, `${clean0} → ${rlink.st.info.clean}`);
 check('气泡上会多一行「工作区 … 处未提交」', (rlink.st.linkState.git.length > 0 ? lk.line() || '' : '').includes('未提交'), String(lk.line()));
 check('「工作区状态」那句话能念出来', lk.text().includes('repo'), lk.text());
+
+// 24) 动画池按成长阶段解锁
+const { filterAnimations, lockedNames, makeAnimPicker, DEFAULT_STAGE_UNLOCK } = await import(url('lib/raise/anim.mjs'));
+const animsStage = {
+  idle: ['待机呼吸休闲'],
+  categories: [
+    { id: '小动作', actions: ['悠闲哼歌', '照镜子'] },
+    { id: '玩耍', actions: ['荡秋千', '骑木马'] },
+    { id: '吃什么', actions: ['吃大餐', '吃白饭'] },
+    { id: '时节', actions: ['堆雪人'] },
+    { id: '我自己加的', actions: ['自定义动画'] },
+  ],
+  events: { whisper: ['碎碎念-发呆碎碎念'] },
+};
+const eggCfg = filterAnimations(animsStage, 'Egg');
+const eggCats = eggCfg.categories.map((c) => c.id);
+check('蛋期只留下「小动作」和「吃什么」', eggCats.includes('小动作') && eggCats.includes('吃什么') && !eggCats.includes('玩耍') && !eggCats.includes('时节'), eggCats.join(','));
+check('用户自己加的分类不会被锁死（fail-open）', eggCats.includes('我自己加的'), eggCats.join(','));
+check('幼年期多一些（玩耍）', filterAnimations(animsStage, 'Kid').categories.map((c) => c.id).includes('玩耍'));
+check('成年期全开', filterAnimations(animsStage, 'Adult').categories.length === animsStage.categories.length);
+check('待机/点击这些池子一个字都不动', eggCfg.idle[0] === '待机呼吸休闲' && eggCfg.events.whisper[0] === '碎碎念-发呆碎碎念');
+check('锁住的动画名认得出来（但自定义的不算锁）', (() => {
+  const l = lockedNames(animsStage, 'Egg');
+  return l.has('荡秋千') && !l.has('吃大餐') && !l.has('自定义动画');
+})());
+check('点播时不会去点被锁住的动画（会退到说话池）', (() => {
+  const p = makeAnimPicker(animsStage, () => 'Egg', DEFAULT_STAGE_UNLOCK);
+  return p.pick('toy') === '碎碎念-发呆碎碎念';
+})());
+check('成年后能点播玩耍类动画了', (() => {
+  const p = makeAnimPicker(animsStage, () => 'Adult', DEFAULT_STAGE_UNLOCK);
+  return ['荡秋千', '骑木马'].includes(p.pick('toy'));
+})());
+
+// 引擎里的阶段切换：通知 + 请桌宠重载
+const rstage = freshRaise();
+let stageMsg = null;
+rstage.st.onStageChange = (from, to) => {
+  stageMsg = `${from}→${to}`;
+};
+rstage.st.info.growth = 200; // 1 级 → 5 级要 125+325+650+1150 = 2250…先给够
+rstage.st.syncLevel();
+rstage.st.info.growth = 20000;
+rstage.st.syncLevel();
+check('跨阶段会通知（蛋 → 幼年）', stageMsg === 'Egg→Kid', String(stageMsg));
+check('跨阶段会请桌宠重载配置（新的动画池才生效）', rstage.st.pendingReloadUntil > Date.now());
+
+// 25) 成就墙
+const achv = await import(url('lib/raise/achv.mjs'));
+const ra = achvRaise();
+const ybA = ra.st.info.yb;
+const got1 = achv.check(ra.st);
+check('新宠物第一轮就拿到「破壳而出」并发了奖励', got1.some((a) => a.id === 'hatch') && ra.st.info.yb === ybA + 100, `${ybA} → ${ra.st.info.yb}`);
+check('同一成就不会重复解锁', achv.check(ra.st).length === 0);
+ra.st.info.growth = 20000;
+ra.st.syncLevel();
+check('升到幼年期解锁「上学啦」', achv.check(ra.st).some((a) => a.id === 'kid'));
+ra.st.setInfo('yb', 20000);
+check('攒到一万解锁「万元户」（奖励是心情）', (() => {
+  const mood0 = ra.st.info.mood;
+  const got = achv.check(ra.st);
+  return got.some((a) => a.id === 'rich') && ra.st.info.mood >= mood0;
+})());
+
+check('累计用量计数：喂 100 万 token 会记进成就统计', (() => {
+  const r2 = achvRaise();
+  r2.fake.feed(1_000_000);
+  r2.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  r2.st.tick();
+  return achv.statOf(r2.st, 'tokens') === 1_000_000 && achv.statOf(r2.st, 'dayTokens') === 1_000_000;
+})());
+check('同一 tick 里就把「一百万 token」解锁了', (() => {
+  const r2 = achvRaise();
+  r2.fake.feed(1_000_000);
+  r2.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  r2.st.tick();
+  return achv.isUnlocked(r2.st, 'tok1m');
+})());
+
+check('连续天数：昨天来过就 +1，断了从头数', (() => {
+  const rd = freshRaise();
+  const st = rd.st;
+  achv.list(st); // 先把进度对象建出来
+  const today = st.dayStart();
+  st.achv.stats.lastDay = today - 86400;
+  st.achv.stats.streak = 3;
+  achv.newDay(st);
+  const ok1 = achv.statOf(st, 'streak') === 4;
+  st.achv.stats.lastDay = today - 86400 * 5; // 断了五天
+  achv.newDay(st);
+  return ok1 && achv.statOf(st, 'streak') === 1;
+})());
+check('跨天会把"单日 token"清零（累计值留着）', (() => {
+  const rd = freshRaise();
+  achv.bump(rd.st, 'dayTokens', 123);
+  achv.bump(rd.st, 'tokens', 999);
+  achv.list(rd.st);
+  rd.st.achv.stats.lastDay = rd.st.dayStart() - 86400;
+  achv.newDay(rd.st);
+  return achv.statOf(rd.st, 'dayTokens') === 0 && achv.statOf(rd.st, 'tokens') === 999;
+})());
+check('关掉成就时统计照样记，但不会解锁', (() => {
+  const r3 = freshRaise(); // newRaise 里 achievements:false
+  r3.fake.feed(2_000_000);
+  r3.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  r3.st.tick();
+  return achv.statOf(r3.st, 'tokens') === 2_000_000 && achv.list(r3.st).every((a) => !a.unlocked);
+})());
+
+check('成就进度能报出来（未达成显示 n/N）', (() => {
+  const txt = achv.describe(ra.st, 'tok1b');
+  return txt.includes('进度') && txt.includes('十亿');
+})());
+check('已达成的成就说的是"已达成"', achv.describe(ra.st, 'hatch').includes('已达成'));
+check('成就在菜单里有一栏，条目数与表一致', (() => {
+  const sec = ra.menu().find((s) => s.label.includes('成就'));
+  return Boolean(sec) && sec.children.length === achv.ACHIEVEMENTS.length + 2; // +「看看成就」+「图鉴」
+})(), String(ra.menu().find((s) => s.label.includes('成就'))?.children.length));
 
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });

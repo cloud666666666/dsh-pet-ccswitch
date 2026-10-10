@@ -194,7 +194,6 @@ check('死亡后 grow() 不再记账', (() => {
 })());
 
 // 还魂丹（60001）复活
-st4.addGood?.call;
 const { addGood } = await import(url('lib/raise/goods.mjs'));
 addGood(st4, 'medicine', '60001', 1);
 r4.act('use:medicine:60001');
@@ -247,7 +246,8 @@ r7.st.lastTick = Math.floor(Date.now() / 1000) - 600;
 const h7 = r7.st.info.hunger;
 r7.st.grow();
 check('暂停时不吃不喝（不衰减）', r7.st.info.hunger === h7);
-r7.act('pause') === false;
+r7.act('pause');
+check('已经是暂停状态时再点一次仍然保持暂停（幂等）', r7.st.save.settings.paused === true);
 r7.act('resume');
 check('恢复后 paused = false', r7.st.save.settings.paused === false);
 r7.act('quiet:toggle');
@@ -350,21 +350,17 @@ for (let i = 0; i < 3; i++) {
 check('三题全对 → 升学（学籍 +1）', sts.save.studyInfo.chinese === 10, String(sts.save.studyInfo.chinese));
 check('考完就收摊（不会重复考）', rs.st.exam === null);
 
-// 答错不给过
-sts.save.studyInfo.chinese = 19;
-rs.act('study:zx-chinese'); // 中学语文：课时 30 → 课时未满，会去上课
-advanceTask(rs.st, 45);
-sts.save.studyInfo.chinese = 39;
+// 答错不给过（先确认考试真的开起来了，否则这段断言会静默跳过）
+const zg = goodOf('study', 'zx-chinese');
+sts.save.studyInfo.chinese = zg.classNumUp + zg.classNum; // 课时正好修满
 rs.st.exam = null;
 rs.act('study:zx-chinese');
-if (rs.st.exam) {
-  for (let i = 0; i < 3; i++) {
-    const q = rs.st.exam.questions[rs.st.exam.picked.length];
-    const wrong = q.options.findIndex((o) => o !== q.answer);
-    rs.act('exam:' + wrong);
-  }
-  check('答错就不给升学（学籍不动）', sts.save.studyInfo.chinese === 39, String(sts.save.studyInfo.chinese));
+check('课时修满的科目点一下就开考', Boolean(rs.st.exam), String(rs.st.exam));
+for (let i = 0; i < 3 && rs.st.exam; i++) {
+  const q = rs.st.exam.questions[rs.st.exam.picked.length];
+  rs.act('exam:' + q.options.findIndex((o) => o !== q.answer)); // 每一题都故意答错
 }
+check('答错就不给升学（学籍不动）', sts.save.studyInfo.chinese === zg.classNumUp + zg.classNum, String(sts.save.studyInfo.chinese));
 
 section('旅游（奇遇 / 相簿 / 到访记录）');
 const rt = newRaise();
@@ -631,6 +627,54 @@ rex.st.syncLevel();
 rex.st.save.studyInfo.art = 9;
 rex.act('study:xx-art');
 check('没有题库的科目按免考升学处理（不会卡在课时修满）', rex.st.save.studyInfo.art === 10 && rex.st.exam === null, `art=${rex.st.save.studyInfo.art}`);
+
+// 13) 在线奖励倒计时跟着 grown 走 → 心情见底时那 20 分钟永远走不完
+const rgift = freshRaise();
+rgift.st.setInfo('mood', 0);
+rgift.st.lastTick = Math.floor(Date.now() / 1000) - 1200; // 过了 20 分钟
+rgift.st.tick();
+check('心情为 0 时，在线奖励的 20 分钟倒计时照样走完', signin.onlineGiftWait(rgift.st) === 0, String(signin.onlineGiftWait(rgift.st)));
+
+// 14) 背包超过 12 种时，后拿到的那些在菜单里没有入口
+const rbag = freshRaise();
+const { allGoods, countOf: cnt2 } = await import(url('lib/raise/goods.mjs'));
+const foods15 = allGoods('food').filter((g) => g.price > 0).slice(0, 15);
+for (const g of foods15) addG(rbag.st, 'food', g.id, 1);
+const feedKids = rbag.menu()[0].children.find((c) => c.label.includes('喂食')).children;
+const feedIds = feedKids.map((c) => c.raise.split(':')[2]);
+check('背包里 15 种食物都能在菜单里点到', foods15.every((g) => feedIds.includes(g.id)), `菜单里 ${feedIds.length} 项`);
+
+// 15) 功能道具 / 背景没有菜单入口（商店卖它们、任务也发它们）
+const rfx = freshRaise();
+addG(rfx.st, 'nums', 'yb', 5); // 背包里有功能道具才该出现那一栏
+const coreLabels = rfx.menu()[0].children.map((c) => c.label);
+check('功能道具（元宝/成长值…）有菜单入口', coreLabels.some((l) => l.includes('功能道具')), coreLabels.join('|'));
+check('背景有菜单入口', coreLabels.some((l) => l.includes('换个背景')), coreLabels.join('|'));
+const ybFx0 = rfx.st.info.yb;
+rfx.act('use:nums:yb');
+check('用「元宝」道具真的能加到元宝上', rfx.st.info.yb === ybFx0 + 1, `+${rfx.st.info.yb - ybFx0}`);
+
+// 16) 日历开着时，任务在日历到手前就被抽掉了 → 节假日算成普通工作日
+let calLoaded = false;
+const holiday = { holiday: { name: '国庆节', off: true } };
+const fakeCal = {
+  enabled: true,
+  load: async () => {
+    calLoaded = true;
+    return holiday;
+  },
+  today: () => (calLoaded ? holiday : undefined),
+  days: () => (calLoaded ? [holiday] : []),
+  nextHoliday: () => null,
+};
+const rh = createRaise({ animations: ANIMS, log: () => {}, calendar: fakeCal });
+rh.st.tokens = () => ({ tokens: 0, requests: 0 });
+check('日历还没到手时先不抽任务（免得把节假日当工作日）', taskList(rh.st, 'daily').length === 0, String(taskList(rh.st, 'daily').length));
+rh.start();
+await new Promise((r) => setTimeout(r, 80)); // 等日历回来
+const rolled = taskList(rh.st, 'daily').map((t) => t.label);
+check('日历到手后按节假日抽（多一条节日任务）', rolled.some((l) => l.includes('国庆节快乐')), rolled.join(' / '));
+rh.stop();
 
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });

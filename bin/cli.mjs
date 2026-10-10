@@ -318,7 +318,7 @@ async function cmdUninstall(argv) {
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const backupDir = path.join(path.dirname(HOME), `dsh-pet-backup-${stamp}`);
   const saved = [];
-  for (const name of ['main-config.json', 'memory.json']) {
+  for (const name of ['main-config.json', 'memory.json', 'raise.json', 'raise-config.json']) {
     const f = path.join(USER_DIR, name);
     if (!fs.existsSync(f)) continue;
     try {

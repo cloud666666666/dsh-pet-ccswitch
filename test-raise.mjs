@@ -764,6 +764,39 @@ check('不认识的配置项直接报错', (() => {
 delete process.env.PET_RAISE_CALENDAR;
 fs.rmSync(cfgFile, { force: true });
 
+// 19) 旅游成就（qqpet 里唯一能重做旅游任务的入口）没接线 → 城市任务一辈子只能领一次
+const rtour = freshRaise();
+rtour.st.save.gameSaveDatas.travel_china = [{ name: '北京市', value: 1 }];
+rtour.st.save.gameSaveDatas.travel_china_num = 0;
+const tourTasks = taskList(rtour.st, 'travel');
+tourTasks[2].take = true; // 假装「去5个不同的城市」领过了
+rtour.st.setInfo('yb', 20000);
+rtour.act('trip:finish');
+check('完成旅游成就：扣 8888 元宝', rtour.st.info.yb === 20000 - 8888, String(rtour.st.info.yb));
+check('完成后到访记录清空（能重新去城市）', rtour.st.save.gameSaveDatas.travel_china.length === 0);
+check('成就次数 +1', rtour.st.save.gameSaveDatas.travel_china_num === 1);
+check('旅游任务的领取标记清掉（可以重做）', taskList(rtour.st, 'travel')[2].take === false);
+check('没旅游过就不让点（不白扣钱）', (() => {
+  const r0 = freshRaise();
+  r0.st.setInfo('yb', 20000);
+  const ok0 = r0.act('trip:finish');
+  return ok0 === false && r0.st.info.yb === 20000;
+})());
+
+// 20) 存档坏了不能默默当新宠物养（那是把养了几个月的一只丢了）
+const badFile = path.join(HOME, 'user', 'raise.json');
+fs.writeFileSync(badFile, '{ 这不是合法 JSON');
+const rbad = createRaise({ animations: ANIMS, log: () => {} });
+check('存档损坏时会备份成 .bad-* 再新建', fs.readdirSync(path.join(HOME, 'user')).some((f) => f.includes('raise.json.bad-')), fs.readdirSync(path.join(HOME, 'user')).join(','));
+check('新建的宠物是能用的', rbad.st.info.health === 5 && rbad.st.info.yb === 5000);
+
+// 21) 死掉的宠物点它不该继续攒「逗逗我」
+const rdead = freshRaise();
+rdead.st.setInfo('health', 0);
+const ddw0 = countOf2(rdead.st, 'Amusing');
+rdead.act('pet:click');
+check('死了以后点它不计「逗逗我」', countOf2(rdead.st, 'Amusing') === ddw0, `${ddw0} → ${countOf2(rdead.st, 'Amusing')}`);
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

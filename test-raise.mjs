@@ -1126,6 +1126,26 @@ check('喂到饱会如实显示"没涨"（封顶了）', (() => {
   return rf4.st.events.at(-1)?.text;
 })()));
 
+check('换算系数要能自解释（说清它是怎么来的）', (() => {
+  const rf5 = freshRaise();
+  rf5.st.setInfo('mood', 300); // 郁闷档 → 系数 0.7
+  rf5.st.setInfo('pinkDiamond', true);
+  rf5.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400); // 真开通才算数
+  const txt = rf5.text();
+  return (
+    txt.includes('token 换算 ×') &&
+    txt.includes('心情 0.7') &&
+    txt.includes('粉钻 +10/时') &&
+    txt.includes('加成') &&
+    txt.includes('成长值 = token ÷ 100 万')
+  );
+})(), freshRaise().text());
+check('换算系数是 1 的时候不啰嗦（不占行）', (() => {
+  const rf6 = freshRaise();
+  rf6.st.setInfo('mood', 1000); // 开心档 + 没有加成 = 1.0
+  return !rf6.text().includes('token 换算');
+})());
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

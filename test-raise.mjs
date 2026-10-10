@@ -1280,7 +1280,7 @@ check('详细属性里也会报贵族到期与生效中的限时物品', (() => 
   rd3.st.events.length = 0;
   rd3.act('detail');
   const t = rd3.st.events.at(-1)?.text ?? '';
-  return t.includes('粉钻') && t.includes('天') && t.includes('柔爽洗发液') && t.includes('42 分钟');
+  return t.includes('粉钻') && t.includes('天') && t.includes('柔爽洗发液') && t.includes('42分');
 })(), JSON.stringify((() => {
   const r = freshRaise();
   r.st.events.length = 0;
@@ -1304,7 +1304,7 @@ check('「贴心宝贝有什么用」点开就念好处', (() => {
   rh2.st.events.length = 0;
   rh2.act('heart:help');
   const t = rh2.st.events.at(-1)?.text ?? '';
-  return t.includes('自己照顾自己') && t.includes('1.1');
+  return t.includes('吃饭洗澡') && t.includes('1.1');
 })());
 check('贵族那一栏里有「有什么用」两条', (() => {
   const sec = freshRaise().menu().find((s) => s.label.includes('贵族'));
@@ -1328,7 +1328,8 @@ check('状态里贵族带剩余天数（不然不知道还剩几天）', (() => 
 check('打工菜单里写清了属性/学历门槛', (() => {
   const sec = freshRaise().menu().find((s) => s.label.includes('打工'));
   const actor = sec.children.find((c) => c.raise === 'work:yy');
-  return /智力800/.test(actor.label) && /魅力800/.test(actor.label) && /学历/.test(actor.label);
+  // 紧凑写法：智800/武1000/魅800 · 学历用简称（中礼仪）
+  return /智800/.test(actor.label) && /魅800/.test(actor.label) && /中礼仪/.test(actor.label);
 })(), (() => {
   const sec = freshRaise().menu().find((s) => s.label.includes('打工'));
   return sec.children.filter((c) => c.raise === 'work:yy' || c.raise === 'work:nwg').map((c) => c.label).join(' | ');
@@ -1399,6 +1400,83 @@ check('头一回开机提一句"右键有玩法"（只提一次）', (() => {
   ron.st.events.length = 0;
   ron.st.daily(); // 第二次不该再说
   return first && !ron.st.events.some((e) => e.text.includes('右键'));
+})());
+
+// 30) 气泡容量：放不下的部分会被窗口顶上裁掉（用户看到的"显示不全"就是这个）
+const { bubbleRows, BUBBLE_ROWS, BUBBLE_UNITS, fitBubble, textUnits } = await import(url('lib/raise/engine.mjs'));
+const TRIM_MARK = '…（还有内容';
+/** 我们自己的气泡都必须在容量内（既不能超行，也不能触发兜底截断） */
+const fits = (text) => bubbleRows(text) <= BUBBLE_ROWS && !String(text).includes(TRIM_MARK);
+const bubbleOf = (r, action) => {
+  r.st.events.length = 0;
+  r.act(action);
+  return r.st.events.at(-1)?.text ?? '';
+};
+check('「详细属性」在气泡容量内（8 行、每行 16 个汉字）', (() => {
+  const r = freshRaise();
+  r.st.setInfo('pinkDiamond', true);
+  r.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 5);
+  r.st.info.sweetHeart = true;
+  r.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 7;
+  r.st.save.selfGoodUseOption.clean = { id: '102020055', left: 42 };
+  const t = bubbleOf(r, 'detail');
+  return fits(t);
+})(), (() => {
+  const r = freshRaise();
+  r.st.setInfo('pinkDiamond', true);
+  r.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 5);
+  r.st.info.sweetHeart = true;
+  r.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 7;
+  r.st.save.selfGoodUseOption.clean = { id: '102020055', left: 42 };
+  const t = bubbleOf(r, 'detail');
+  return `${bubbleRows(t)} 行: ` + t.split('\n').map((l) => l).join(' / ');
+})());
+check('状态气泡在容量内（含工作区那一行）', (() => {
+  const r = freshRaise();
+  r.linkState = { git: [{ repo: 'x', name: 'dsh-pet-ccswitch', dirty: 27, head: 'h', files: [] }], at: Date.now() };
+  const t = statusLines(r.st).join('\n');
+  return fits(t);
+})(), statusLines(freshRaise().st).join(' / '));
+check('「粉钻/贴心宝贝有什么用」在容量内', (() => {
+  const r = freshRaise();
+  return fits(bubbleOf(r, 'pd:help')) && fits(bubbleOf(r, 'heart:help'));
+})(), (() => {
+  const r = freshRaise();
+  return bubbleOf(r, 'pd:help').split('\n').join(' / ');
+})());
+check('成就栏 / 池塘 / 工作区 的气泡也在容量内', (() => {
+  const r = achvRaise();
+  r.st.setInfo('yb', 2000);
+  r.act('fish:buy:2');
+  r.act('fish:buy:3');
+  return fits(bubbleOf(r, 'achv:list')) && fits(bubbleOf(r, 'fish:state')) && fits(bubbleOf(r, 'album'));
+})(), (() => {
+  const r = achvRaise();
+  r.act('fish:buy:2');
+  return bubbleOf(r, 'fish:state').split('\n').join(' / ');
+})());
+check('超长内容会被兜底截断并标明（绝不静默裁掉）', (() => {
+  const long = Array.from({ length: 20 }, (_, i) => `第 ${i + 1} 行内容`).join('\n');
+  const out = fitBubble(long);
+  return bubbleRows(out) <= BUBBLE_ROWS && out.includes(TRIM_MARK);
+})());
+check('菜单里的长标签也有限度（菜单面板能滚，但一行太长会顶出面板宽度）', (() => {
+  const r = achvRaise();
+  const labels = [];
+  const walk = (nodes) => nodes.forEach((n) => (Array.isArray(n.children) ? walk(n.children) : labels.push(n.label)));
+  walk(r.menu());
+  // 菜单一项约放得下 18 个单位宽（240px / 13px），超了会被截成省略号 ——
+  // 所以重要的是「工资/等级/门槛」必须排在前头，学历那类排在最后、被截掉也能接受
+  const tooLong = labels.filter((l) => textUnits(l) > 40); // 40 单位 ≈ 面板两行；再长就被截成省略号
+  const earlyOk = labels.filter((l) => l.raise?.startsWith('work:')).every((l) => /元宝·\d+分/.test(l.label.slice(0, 22)));
+  return tooLong.length === 0 && earlyOk;
+})(), (() => {
+  const r = achvRaise();
+  const labels = [];
+  const walk = (nodes) => nodes.forEach((n) => (Array.isArray(n.children) ? walk(n.children) : labels.push(n.label)));
+  walk(r.menu());
+  return labels.filter((l) => textUnits(l) > 40).slice(0, 3).map((l) => `${textUnits(l)} 单位: ${l}`).join(' | ') ||
+    labels.filter((l) => l.raise?.startsWith('work:')).slice(0, 2).map((l) => l.label).join(' | ');
 })());
 
 // ---------------------------------------------------------------------------

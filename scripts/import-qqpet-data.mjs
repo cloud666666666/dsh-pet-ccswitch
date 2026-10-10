@@ -19,9 +19,14 @@ const SRC_ROOT = path.resolve(process.argv[2] || process.env.QQPET_DIR || path.j
 const DATA_SRC = path.join(SRC_ROOT, 'src', 'renderer', 'pet', 'data');
 const OUT = path.join(HERE, '..', 'lib', 'raise', 'data');
 
-/** 空值剔除：'' / 0 / false / null / 空对象一律不写进产物 */
+/**
+ * 空值剔除：'' / null / undefined / 空对象 / 空数组 不写进产物。
+ * **0 和 false 要留着** —— 这两个是有含义的值：`classNumUp: 0`（从第 0 课时起）、
+ * `school: 0`（小学）、`PD: false`，删了会让「已学课时」算成 NaN。
+ */
 const empty = (v) =>
-  v === '' || v === 0 || v === false || v === null || v === undefined ||
+  v === '' || v === null || v === undefined ||
+  (Array.isArray(v) && v.length === 0) ||
   (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0);
 
 const compact = (obj) => {

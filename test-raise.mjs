@@ -258,6 +258,8 @@ check('心情负数 → 0', r11.st.info.mood === 0);
 check('性别非法 → GG', r11.st.info.sex === 'GG');
 check('元宝非数字 → 5000', r11.st.info.yb === 5000);
 check('带 __ 的旧玩具被丢掉', r11.st.info && !r11.st.save.selfGoodDatas.toy.some((x) => x.includes('__')));
+// 上面那份存档是故意弄坏的（健康度被判成 0 = 死亡），后面的用例要一只健康的宠物
+fs.rmSync(path.join(HOME, 'user', 'raise.json'), { force: true });
 
 // ---------------------------------------------------------------------------
 section('token 计量表（去重与水位）');
@@ -268,6 +270,94 @@ check('水位可以往回拨', (() => {
   m.ts = 0;
   return m.ts === 0;
 })());
+
+// ---------------------------------------------------------------------------
+section('打工（门槛 / 进行中 / 收工）');
+const rj = newRaise();
+const stj = rj.st;
+rj.act('work:bz'); // 搬砖：2 级起，10 元宝 / 30 分钟
+check('等级不够时去不了（原版判定）', stj.activity('work') === null && rj.poll()?.text.includes('等级'), JSON.stringify(rj.poll()?.text));
+stj.info.growth = 100000; // 拉高等级
+stj.syncLevel();
+rj.act('work:bz');
+check('等级够了就去上班了', stj.activity('work') === 'bz', String(stj.activity('work')));
+check('上班时 busy() 为真（状态气泡会显示"打工中"）', stj.busy());
+const ybWork = stj.info.yb;
+const { advanceTask } = await import(url('lib/raise/activity.mjs'));
+advanceTask(stj, 30); // 干满 30 分钟
+check('收工后拿到元宝（搬砖 10）', stj.info.yb === ybWork + goodOf('work', 'bz').yb, `+${stj.info.yb - ybWork}`);
+check('收工后工作位清空', stj.activity('work') === null);
+
+section('上学 / 升学考试');
+const rs = newRaise();
+const sts = rs.st;
+sts.info.growth = 100000;
+sts.syncLevel();
+rs.act('study:xx-chinese');
+check('去上课了', sts.activity('study') === 'xx-chinese', String(sts.activity('study')));
+const intel0 = sts.info.intel;
+advanceTask(sts, 45); // 一节课 45 分钟
+check('上完一节课学籍 +1', sts.save.studyInfo.chinese === 1, String(sts.save.studyInfo.chinese));
+check('上课长了智力', sts.info.intel > intel0);
+
+// 课时修满 → 自动安排升学考试
+sts.save.studyInfo.chinese = 9;
+rs.act('study:xx-chinese');
+check('课时修满后点击就开考', Boolean(rs.st.exam) && rs.st.exam.questions.length === 3, String(rs.st.exam?.questions.length));
+const examMenu = rs.menu()[0];
+check('考试顶到菜单最前面，且带着题目与选项', examMenu.label.includes('升学考试') && examMenu.children[0].children.length === 4, examMenu.label);
+for (let i = 0; i < 3; i++) {
+  const q = rs.st.exam.questions[rs.st.exam.picked.length];
+  rs.act('exam:' + q.options.indexOf(q.answer));
+}
+check('三题全对 → 升学（学籍 +1）', sts.save.studyInfo.chinese === 10, String(sts.save.studyInfo.chinese));
+check('考完就收摊（不会重复考）', rs.st.exam === null);
+
+// 答错不给过
+sts.save.studyInfo.chinese = 19;
+rs.act('study:zx-chinese'); // 中学语文：课时 30 → 课时未满，会去上课
+advanceTask(rs.st, 45);
+sts.save.studyInfo.chinese = 39;
+rs.st.exam = null;
+rs.act('study:zx-chinese');
+if (rs.st.exam) {
+  for (let i = 0; i < 3; i++) {
+    const q = rs.st.exam.questions[rs.st.exam.picked.length];
+    const wrong = q.options.findIndex((o) => o !== q.answer);
+    rs.act('exam:' + wrong);
+  }
+  check('答错就不给升学（学籍不动）', sts.save.studyInfo.chinese === 39, String(sts.save.studyInfo.chinese));
+}
+
+section('旅游（奇遇 / 相簿 / 到访记录）');
+const rt = newRaise();
+const stt = rt.st;
+stt.setInfo('mood', 500);
+rt.act('trip');
+check('出门旅游了', Boolean(stt.activity('trip')), String(stt.activity('trip')));
+advanceTask(stt, 60);
+check('回来后心情 +20（原版固定值）', stt.info.mood === 520, String(stt.info.mood));
+check('到访过的省份记进了存档', stt.save.gameSaveDatas.travel_china.length === 1, JSON.stringify(stt.save.gameSaveDatas.travel_china));
+check('拍了一张明信片进相簿', JSON.parse(stt.save.saveJsonData.album || '[]').length === 1);
+rt.act('album');
+// 上一条还在交给桌宠的 3 秒宽限里，所以看队列尾巴而不是 poll()
+const queued = rt.st.events.at(-1)?.text ?? '';
+check('相簿能报数', queued.includes('明信片'), queued);
+
+section('重启后接着做没做完的活（离线时间也算进度）');
+const r5b = newRaise();
+r5b.st.info.growth = 100000;
+r5b.st.syncLevel();
+r5b.act('work:bz');
+r5b.st.save.saveJsonData.activity = '10'; // 已经做了 10 分钟
+r5b.st.save.nowTimeLine = Math.floor(Date.now() / 1000) - 600; // 上次记账在 10 分钟前
+r5b.st.flush(true);
+const r5c = createRaise({ animations: ANIMS, log: () => {} });
+r5c.start(); // start() 里会跑 hooks.resume
+const { running } = await import(url('lib/raise/activity.mjs'));
+const back2 = running();
+check('重启后活还在，且把关掉的 10 分钟也算上了', Boolean(back2) && back2.done >= 19, JSON.stringify(back2));
+r5c.stop();
 
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });

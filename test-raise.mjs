@@ -1629,7 +1629,9 @@ check('「详细属性」贴主人自己的头像（配了 portrait 才贴，不
   noP.st.events.length = 0;
   noP.act('detail');
   const without = noP.st.events.at(-1)?.image ?? '';
-  settings.writeConfig({ portrait: 'C:/Users/x/pet.png' });
+  const mine = path.join(HOME, 'my-avatar.png');
+  fs.writeFileSync(mine, 'x');
+  settings.writeConfig({ portrait: mine });
   const withP = achvRaise();
   withP.st.events.length = 0;
   withP.act('detail');
@@ -1640,6 +1642,11 @@ check('「详细属性」贴主人自己的头像（配了 portrait 才贴，不
   r.act('detail');
   return r.st.events.at(-1)?.image;
 })()));
+check('头像路径写错了就不贴（宁可不贴，也不贴一张破图）', (() => {
+  settings.writeConfig({ portrait: 'C:/并没有这个文件/pet.png' });
+  const r = achvRaise();
+  return r.st.imageOf('portrait', '') === '';
+})(), String(settings.resolve('portrait').value));
 check('旅游回来的明信片也带图', (() => {
   const r = achvRaise();
   r.st.setInfo('mood', 500);
@@ -1647,6 +1654,88 @@ check('旅游回来的明信片也带图', (() => {
   return shot === 'album/g_anhui1';
 })());
 fs.rmSync(settings.CONFIG_FILE, { force: true });
+
+// 32b) 配图 URL 的解析（lib/pic.mjs）—— 桌宠只会这么要图，名字整体被编码、末尾还被硬加 .png
+//      `<base>/pic/memes/<encodeURIComponent(名字)>.png`
+//      这里全部用临时目录，不依赖本机有没有 qqpet 素材；每一条都是真踩过的坑。
+{
+  const { createPicResolver } = await import(url('lib/pic.mjs'));
+  const assets = path.join(HOME, 'assets');
+  const qqpet = path.join(HOME, 'qqpet');
+  const mine = path.join(HOME, 'my-avatar.png');
+  const write = (p, body = 'x') => {
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, body);
+  };
+  write(path.join(assets, 'memes', '先养着吧.png')); // 表情包：文件名不带扩展名的那一类
+  write(path.join(assets, 'memes', 'Ciallo.png'));
+  write(path.join(assets, 'pic', 'cursor.cur'));
+  write(path.join(qqpet, 'img_res', 'food', '100010032.gif'));
+  write(path.join(qqpet, 'img_res', 'toy', 't0002.png')); // 原版里真扩展名是 .png 的（早先被多剥一层）
+  write(path.join(qqpet, 'img_res', 'muns', '102010001.gif')); // 原版目录名拼错了（nums → muns）
+  write(path.join(qqpet, 'album', 'g_anhui1.webp'));
+  write(path.join(qqpet, 'fishing', 'res', 'fish', '2.png'));
+  write(path.join(qqpet, 'achievement', 'travel.svg'));
+  write(mine);
+  const resolve = createPicResolver({
+    assetsDir: assets,
+    getSettings: () => ({ assetsFrom: { value: qqpet }, portrait: { value: mine } }),
+  });
+  /** 桌宠的拼法：整名编码 + 末尾 .png */
+  const ask = (name) => resolve(`memes/${encodeURIComponent(name)}.png`);
+  const is = (got, want) => got === path.join(want);
+  check('表情包：名字不带扩展名，剥掉 URL 末尾那个 .png 后要**补回来**', is(ask('先养着吧'), path.join(assets, 'memes', '先养着吧.png')), String(ask('先养着吧')));
+  check('表情包：名字里自带 .png 的那张也照样找得到', is(ask('Ciallo'), path.join(assets, 'memes', 'Ciallo.png')), String(ask('Ciallo')));
+  check('物品图标 .gif：URL 尾巴 .png 剥掉后保留真扩展名', is(ask('asset/img_res/food/100010032.gif'), path.join(qqpet, 'img_res', 'food', '100010032.gif')), String(ask('asset/img_res/food/100010032.gif')));
+  check('物品图标 .png：只剥一层（早先剥两层 → 玩具/工作图标全 404）', is(ask('asset/img_res/toy/t0002.png'), path.join(qqpet, 'img_res', 'toy', 't0002.png')), String(ask('asset/img_res/toy/t0002.png')));
+  check('路径照表里的 url 走，不按类型拼目录（nums 实际叫 muns）', is(ask('asset/img_res/muns/102010001.gif'), path.join(qqpet, 'img_res', 'muns', '102010001.gif')), String(ask('asset/img_res/muns/102010001.gif')));
+  check('相簿照片（磁盘上是 .webp）', is(ask('album/g_anhui1'), path.join(qqpet, 'album', 'g_anhui1.webp')), String(ask('album/g_anhui1')));
+  check('养的鱼', is(ask('fish/2'), path.join(qqpet, 'fishing', 'res', 'fish', '2.png')), String(ask('fish/2')));
+  check('成就徽章（.svg）', is(ask('achv/travel'), path.join(qqpet, 'achievement', 'travel.svg')), String(ask('achv/travel')));
+  check('主人头像走配置里的绝对路径', is(ask('portrait'), mine), String(ask('portrait')));
+  check('文件真的不在 → 不解析（宁可不贴图，也不贴破图）', ask('album/并没有这张') === null, String(ask('album/并没有这张')));
+  check('名字里带 .. 也钻不出素材目录', ask('asset/../../secret') === null, String(ask('asset/../../secret')));
+  check('不是 memes 通道的老请求（光标等）照旧走 assets/pic', is(resolve('cursor.cur'), path.join(assets, 'pic', 'cursor.cur')), String(resolve('cursor.cur')));
+  write(path.join(assets, 'memes', '带 空格.png')); // 名字里带空格的（整体被 encodeURIComponent 过）
+  check('名字整体被编码过也能解（空格/斜杠/中文）', is(ask('带 空格'), path.join(assets, 'memes', '带 空格.png')), String(ask('带 空格')));
+}
+
+// 32c) 表情包配图（lib/memes.mjs）—— 桌宠 `/whisper` 与 `/chat` 的响应带 image 就会贴图，
+//      名字必须来自配置里的键（`assets/memes/<名字>.png`）
+{
+  const { memeNames, pickMeme, parsePick, MEME_PICK_PROMPT } = await import(url('lib/memes.mjs'));
+  const cfg = { memes: { 先养着吧: '搂着小鲸鱼', Ciallo: '打招呼', 死掉了: '躺平' } };
+  const names = memeNames(cfg);
+  check('表情包名字取自配置的键', names.join(',') === '先养着吧,Ciallo,死掉了', names.join(','));
+  check('没配表情包时抽不出东西（不报错）', pickMeme({}) === '' && memeNames({}).length === 0 && memeNames(null).length === 0);
+  check('随机抽一张：只在池子里、且避开上一次那张', (() => {
+    const seen = new Set();
+    for (let i = 0; i < 60; i++) {
+      const k = pickMeme(cfg, '先养着吧');
+      if (!names.includes(k) || k === '先养着吧') return false;
+      seen.add(k);
+    }
+    return seen.size === 2; // 排除掉那张之后，另外两张都抽得到
+  })(), names.join(','));
+  check('清单把名字和描述都给模型', MEME_PICK_PROMPT('X').includes('[图]') && MEME_PICK_PROMPT('X').endsWith('X'));
+  check('模型挑了图：[图]那一行摘掉，图挂上去', (() => {
+    const r = parsePick('才没有偷懒呢\n[图]先养着吧', names);
+    return r.reply === '才没有偷懒呢' && r.image === '先养着吧';
+  })());
+  check('模型加了反引号/句号也认（名字一字不差才算）', parsePick('[图]`Ciallo`。', names).image === 'Ciallo');
+  check('模型挑了清单外的名字 → 不配图，但那一行照样摘掉', (() => {
+    const r = parsePick('嗯嗯\n[图]并不存在的表情', names);
+    return r.reply === '嗯嗯' && r.image === '';
+  })());
+  check('没写那一行 → 原样返回、不配图', (() => {
+    const r = parsePick('就这样吧', names);
+    return r.reply === '就这样吧' && r.image === '';
+  })());
+  check('气泡里不会漏出 [图] 标记（只回了标记就把原文还回去，不给空气泡）', (() => {
+    const r = parsePick('[图]死掉了', names);
+    return r.image === '死掉了' && r.reply === '[图]死掉了';
+  })());
+}
 
 // 33) 保持姿势（派生出来的）+ 打工/上课/旅游互斥
 check('上课会保持"在忙"的姿势，下课就松开', (() => {

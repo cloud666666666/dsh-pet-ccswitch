@@ -359,6 +359,132 @@ const back2 = running();
 check('重启后活还在，且把关掉的 10 分钟也算上了', Boolean(back2) && back2.done >= 19, JSON.stringify(back2));
 r5c.stop();
 
+section('任务（今日任务 / 逗逗我 / 领奖）');
+const rk = newRaise();
+const stk = rk.st;
+const { tasks: taskList, count: countOf2, addCount } = await import(url('lib/raise/tasks.mjs'));
+check('今天抽了 4 条任务', taskList(stk, 'daily').length === 4, String(taskList(stk, 'daily').length));
+check('任务带进度与领取标记', taskList(stk, 'daily').every((t) => typeof t.done === 'number' && t.take === false));
+// 逗逗我：点宠物算一次
+for (let i = 0; i < 5; i++) rk.act('pet:click');
+check('点宠物 5 次 = 逗它 5 次', countOf2(stk, 'Amusing') === 5, String(countOf2(stk, 'Amusing')));
+check('逗逗我第一条任务可以领了', taskList(stk, 'ddw')[0].done >= taskList(stk, 'ddw')[0].num);
+// 逗逗我第一条的奖励是圈圈冰激凌（新手背包里本来就有 3 个，所以看数量而不是"种类 +1"）
+const num0 = countOf(stk, 'food', '102010001');
+rk.act('claim:ddw:0');
+check('领奖后标记已领', taskList(stk, 'ddw')[0].take === true);
+check('领奖拿到东西（同款物品 +1）', countOf(stk, 'food', '102010001') === num0 + 1, `${num0} → ${countOf(stk, 'food', '102010001')}`);
+rk.act('claim:ddw:1');
+check('没做完的领不了', taskList(stk, 'ddw')[1].take === false);
+
+section('签到 / 抽成长值 / 在线奖励');
+const rc = newRaise();
+const stc = rc.st;
+const signin = await import(url('lib/raise/signin.mjs'));
+check('一开始没签到', signin.signedToday(stc) === false);
+rc.act('sign:in');
+check('签到成功', signin.signedToday(stc) === true);
+check('同一天不会签两次', (() => {
+  const n = signin.monthCount(stc);
+  rc.act('sign:in');
+  return signin.monthCount(stc) === n;
+})());
+check('抽过一次就不能再抽', (() => {
+  rc.act('sign:growth');
+  const first = signin.canDrawGrowth(stc);
+  return first === false;
+})());
+check('在线奖励要等够 20 分钟', signin.onlineGiftWait(stc) > 0 && rc.act('sign:gift') === false);
+signin.tickGift(stc, 20); // 等够
+const ybC = stc.info.yb;
+rc.act('sign:gift');
+check('第一次在线奖励免费', stc.info.yb === ybC, `${stc.info.yb} vs ${ybC}`);
+check('第二次就要 100 元宝（原版价）', signin.giftCost(stc) === 100, String(signin.giftCost(stc)));
+
+section('邮件（欢迎信 / 领附件）');
+const rm = newRaise();
+const stm = rm.st;
+const mail = await import(url('lib/raise/mail.mjs'));
+mail.deliverMails(stm); // 每日首封：欢迎信（跨天钩子里也是调它）
+check('收到欢迎信', mail.unread(stm).some((m) => m.l.includes('欢迎来到QQ宠物')), JSON.stringify(mail.unread(stm).map((m) => m.l)));
+check('同一封不会重复发', (() => {
+  mail.deliverMails(stm);
+  return mail.unread(stm).filter((m) => m.l.includes('欢迎来到')).length === 1;
+})());
+const d0 = mail.unread(stm)[0].d;
+rm.act(`mail:${d0}`);
+check('领了信，附件进背包', mail.unread(stm).every((m) => m.d !== d0));
+check('领过的信不能再领', rm.act(`mail:${d0}`) === false);
+
+section('贵族（粉钻 / 贴心宝贝）');
+const rv = newRaise();
+const stv = rv.st;
+const vip = await import(url('lib/raise/vip.mjs'));
+const base = stv.growthPerMinute();
+stv.setInfo('yb', 10000);
+rv.act('pd:buy');
+check('首次开粉钻 666 元宝', stv.info.yb === 10000 - 666, String(stv.info.yb));
+check('粉钻生效', stv.info.pinkDiamond === true && stv.info.PDiamondLevel >= 1);
+check('粉钻让成长 +10/小时', Math.abs(stv.growthPerMinute() - base - 10 / 60) < 1e-6, `${base} → ${stv.growthPerMinute()}`);
+const ybHeart = stv.info.yb;
+rv.act('heart:buy1');
+check('贴心宝贝 300 元宝/天', stv.info.yb === ybHeart - 300, String(stv.info.yb));
+check('贴心宝贝开启', stv.info.sweetHeart === true && vip.sweetHeartDays(stv) === 1);
+rv.act('heart:toggle');
+check('再点一下可以关掉（天数还在）', stv.info.sweetHeart === false && vip.sweetHeartDays(stv) === 1);
+rv.act('heart:toggle');
+check('还能再开回来', stv.info.sweetHeart === true);
+
+section('池塘养鱼（买苗 / 喂食 / 收成 / 加速）');
+const rf = newRaise();
+const stf = rf.st;
+const fish = await import(url('lib/raise/fishing.mjs'));
+stf.setInfo('yb', 1000);
+rf.act('fish:buy:2'); // 金鱼：2 元宝、0 级可养、售价 2×5
+let pond = fish.pondState(stf);
+check('买了一条金鱼苗', pond.fishes.length === 1 && pond.fishes[0].name === '金鱼', JSON.stringify(pond.fishes.map((f) => f.name)));
+check('扣了 2 元宝', stf.info.yb === 998, String(stf.info.yb));
+check('刚买来是鱼苗（stage 1）', pond.fishes[0].stage === 1);
+rf.act('fish:buy:16'); // 石斑鱼：42 级
+check('等级不够养不了石斑鱼', fish.pondState(stf).fishes.length === 1);
+const ybFeed = stf.info.yb;
+rf.act(`fish:feed:${pond.fishes[0].id}`);
+check('喂一次 10 元宝', stf.info.yb === ybFeed - 10, String(stf.info.yb));
+// 金鱼 interval = 7200 秒（两小时长一档），喂一次算一小时年龄 → 熟（stage 3）要 4 次
+for (let i = 0; i < 3; i++) rf.act(`fish:feed:${fish.pondState(stf).fishes[0].id}`);
+check('喂够 4 次就成熟了（两档各两小时）', fish.pondState(stf).fishes[0].stage === 3, String(fish.pondState(stf).fishes[0].stage));
+const ybHarvest = stf.info.yb;
+rf.act(`fish:harvest:${fish.pondState(stf).fishes[0].id}`);
+check('收成按售价×数量（金鱼 2×5=10）', stf.info.yb === ybHarvest + 10, `+${stf.info.yb - ybHarvest}`);
+check('收完鱼塘空了', fish.pondState(stf).fishes.length === 0);
+// 没熟就捞：只退一半
+rf.act('fish:buy:2');
+const id = fish.pondState(stf).fishes[0].id;
+const ybHalf = stf.info.yb;
+rf.act(`fish:harvest:${id}`);
+check('没熟就捞只退一半（2/2=1）', stf.info.yb === ybHalf + 1, `+${stf.info.yb - ybHalf}`);
+// 鱼塘上限：3 条（非粉钻）
+for (let i = 0; i < 3; i++) rf.act('fish:buy:2');
+rf.act('fish:buy:2');
+check('鱼塘最多 3 条（非粉钻，原版上限）', fish.pondState(stf).fishes.length === 3, String(fish.pondState(stf).fishes.length));
+stf.setInfo('pinkDiamond', true);
+stf.setInfo('PDiamondLevel', 3);
+fish.resetFish(stf);
+check('粉钻每天给等级×2 次加速', fish.pondState(stf).PD.canusecnt === 6, String(fish.pondState(stf).PD.canusecnt));
+const fed0 = fish.pondState(stf).fishes.map((f) => f.siLiao);
+rf.act('fish:speed');
+check('加速消耗一次', fish.pondState(stf).PD.canusecnt === 5);
+check('加速给每条鱼多喂了一口（=一小时年龄）', fish.pondState(stf).fishes.every((f, i) => f.siLiao === fed0[i] + 1));
+
+section('日历（默认关闭时的兜底）');
+const cal = await import(url('lib/raise/calendar.mjs'));
+const c0 = cal.createCalendar({ mode: 'off', log: () => {} });
+check('默认不联网', c0.enabled === false && (await c0.load()) === null);
+check('没日历时节日那句中空', cal.festival(undefined) === null);
+check('没日历时日期那句退回星期', cal.dayText(c0).startsWith('星期'), cal.dayText(c0));
+check('节假日放假那句是对的', cal.festival({ holiday: { name: '国庆节', off: true } }).includes('放假啦'));
+check('调休那句是对的', cal.festival({ holiday: { name: '国庆节', off: false } }).includes('调休'));
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

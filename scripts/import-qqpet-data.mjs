@@ -137,6 +137,10 @@ console.log(`exam.json     题库 → ${rel(path.join(OUT, 'exam.json'))}`);
 fs.copyFileSync(path.join(DATA_SRC, 'album.json'), path.join(OUT, 'album.json'));
 console.log(`album.json    图鉴 → ${rel(path.join(OUT, 'album.json'))}`);
 
+// ---- 鱼苗店（池塘养鱼：16 种鱼的售价/成长时长/收成）----
+fs.copyFileSync(path.join(DATA_SRC, 'fries.json'), path.join(OUT, 'fries.json'));
+console.log(`fries.json    ${readJson('fries.json').length} 种鱼苗 → ${rel(path.join(OUT, 'fries.json'))}`);
+
 // ---- 台词表（.ts 字面量 → JSON，原样搬运）----
 const talk = readTsLiteral('talk.ts', 'export const TALK');
 fs.writeFileSync(path.join(OUT, 'talk.json'), JSON.stringify(talk));

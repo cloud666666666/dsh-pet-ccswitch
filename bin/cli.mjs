@@ -331,8 +331,8 @@ async function cmdRaise(argv) {
       body: JSON.stringify({ action }),
       signal: AbortSignal.timeout(5000),
     }).then((x) => x.json());
-    say(r.ok ? ok(`已执行：${action}（看桌宠那边弹什么）`) : bad(`这个动作没生效：${action}`));
-    if (!r.ok) return;
+    if (!r.ok) return say(bad(r.message || `这个动作没生效：${action}`));
+    say(ok(`已执行：${action}（看桌宠那边弹什么）`));
   }
 
   const s = await pick('/raise/state');

@@ -82,6 +82,12 @@ function newRaise(meter = fakeMeter()) {
   return r;
 }
 
+/** 一只干净宠物：先删存档再建实例（同一个 HOME 下，前面的用例会往存档里留东西） */
+function freshRaise() {
+  fs.rmSync(path.join(HOME, 'user', 'raise.json'), { force: true });
+  return newRaise();
+}
+
 // ---------------------------------------------------------------------------
 section('等级与阶段（原版公式）');
 check('成长 0 → 1 级，升 2 级要 125', levelOf(0).level === 1 && levelOf(0).nextGrowth === 125);
@@ -420,10 +426,11 @@ check('同一天不会签两次', (() => {
   rc.act('sign:in');
   return signin.monthCount(stc) === n;
 })());
-check('抽过一次就不能再抽', (() => {
-  rc.act('sign:growth');
-  const first = signin.canDrawGrowth(stc);
-  return first === false;
+// 原版规则：抽到 000 不算数（不给东西、也不消耗当天那次机会），抽到有数才算用掉
+check('抽成长值：抽到 000 还能再抽，抽到数就不能再抽了', (() => {
+  const got = signin.drawGrowth(stc);
+  const value = +got.digits.join('');
+  return value === 0 ? signin.canDrawGrowth(stc) === true : signin.canDrawGrowth(stc) === false;
 })());
 check('在线奖励要等够 20 分钟', signin.onlineGiftWait(stc) > 0 && rc.act('sign:gift') === false);
 signin.tickGift(stc, 20); // 等够
@@ -515,6 +522,115 @@ check('没日历时节日那句中空', cal.festival(undefined) === null);
 check('没日历时日期那句退回星期', cal.dayText(c0).startsWith('星期'), cal.dayText(c0));
 check('节假日放假那句是对的', cal.festival({ holiday: { name: '国庆节', off: true } }).includes('放假啦'));
 check('调休那句是对的', cal.festival({ holiday: { name: '国庆节', off: false } }).includes('调休'));
+
+// ---------------------------------------------------------------------------
+section('回归：code review 找出来的那些坑');
+const { countOf: cnt, addGood: addG } = await import(url('lib/raise/goods.mjs'));
+
+// 1) 喂食时任务计数钩子的签名错过 → 每次喂东西都抛异常，任务计数永远是 0
+const rg = freshRaise();
+const eat0 = countOf2(rg.st, 'Eat');
+check('喂食动作本身返回成功（钩子签名错时会抛异常 → false）', rg.act('use:food:10013006') === true);
+check('吃东西计数 +1（今日任务「喂我吃东西N次」要用）', countOf2(rg.st, 'Eat') === eat0 + 1, String(countOf2(rg.st, 'Eat')));
+
+// 2) 跨天判定写错字段 → 每分钟都当成新的一天（签到/在线奖励/鱼塘加速每分钟重置）
+const rd = freshRaise();
+rd.act('sign:in');
+for (let i = 0; i < 5; i++) rd.act('pet:click');
+rd.act('claim:ddw:0');
+const today = rd.st.dayStart();
+rd.st.save.nowTimeLine = Math.floor(Date.now() / 1000); // 今天已经结过账（比 06:00 大）
+rd.st.lastTick = Math.floor(Date.now() / 1000) - 120;
+rd.st.tick();
+check('同一天里反复结算不会把签到重置', signin.signedToday(rd.st) === true);
+check('同一天里反复结算不会把领过的任务重置', taskList(rd.st, 'ddw')[0].take === true);
+rd.st.save.nowTimeLine = today - 86400; // 假装跨天了
+rd.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+rd.st.tick();
+check('真跨天才重置：成长值抽奖又能抽了', signin.canDrawGrowth(rd.st) === true);
+check('真跨天才重置：任务领取标记清掉（计数也清零）', taskList(rd.st, 'ddw')[0].take === false && countOf2(rd.st, 'Amusing') === 0);
+
+// 3) stop() 写上了记账水位 → 重启后把关掉的那几个小时补算成饿/脏
+const rs3 = freshRaise();
+rs3.act('use:food:10013006');
+rs3.start();
+rs3.stop();
+const savedRaw = JSON.parse(fs.readFileSync(path.join(HOME, 'user', 'raise.json'), 'utf8'));
+check('stop() 之后水位是清的（重启不会补算关掉那段）', savedRaw.lastTick === null, JSON.stringify(savedRaw.lastTick));
+
+// 4) 非卖品（price = -1）能被买 → 元宝倒着涨
+const rb2 = freshRaise();
+rb2.st.setInfo('yb', 5000);
+rb2.act('buy:food:100010031'); // 雪泥爽：表里 price = -1
+check('非卖品买不了，元宝不会被倒加', rb2.st.info.yb === 5000 && cnt(rb2.st, 'food', '100010031') === 0, `yb=${rb2.st.info.yb}`);
+
+// 5) 限时物品到期调 st.dirty()（不是函数）→ 那一分钟的结算整个中断
+const rt2 = freshRaise();
+addG(rt2.st, 'food', '102010074', 1); // 香辣大对虾：useTimeing
+rt2.st.save.selfGoodUseOption.food = { id: '102010074', left: 0.5 };
+let threw = null;
+try {
+  rt2.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  rt2.st.tick();
+} catch (e) {
+  threw = e;
+}
+check('限时物品到期不再抛异常', threw === null, String(threw));
+check('到期后该类型的生效物品清掉了', rt2.st.save.selfGoodUseOption.food === null);
+
+// 6) 表里没有的工作 id → 元宝变 NaN（之后买卖永远"成功"）
+const rw3 = freshRaise();
+rw3.st.info.growth = 100000;
+rw3.st.syncLevel();
+rw3.act('work:并不存在的工作');
+check('不认识的工作 id：不接活、元宝也不会变 NaN', rw3.st.activity('work') === null && Number.isFinite(rw3.st.info.yb));
+
+// 7) 换宠物时实例上的缓存没清 → 新宠物继承旧鱼的鱼塘/签到/任务
+const rn2 = freshRaise();
+rn2.act('sign:in');
+rn2.st.setInfo('yb', 1000);
+rn2.act('fish:buy:2');
+check('换之前：有签到、有鱼', signin.signedToday(rn2.st) === true && fish.pondState(rn2.st).fishes.length === 1);
+rn2.st.save.havePet = false;
+rn2.st.save.isBury = true;
+rn2.act('adopt:MM');
+check('换宠物后签到状态不跟着走', signin.signedToday(rn2.st) === false);
+check('换宠物后鱼塘是空的', fish.pondState(rn2.st).fishes.length === 0);
+
+// 8) 同一毫秒说两句 → ts 相同，桌宠只弹第一句（看病就是这样丢半句的）
+const rts2 = freshRaise();
+rts2.st.events.length = 0;
+rts2.st.say('第一句', '', { kind: 'act' });
+rts2.st.say('第二句', '', { kind: 'act' });
+check('同一毫秒里说两句，ts 也必须不同', rts2.st.events[0].ts !== rts2.st.events[1].ts, JSON.stringify(rts2.st.events.map((e) => e.ts)));
+
+// 9) 免打扰开关那句被自己的免打扰挡掉 → 点了没反应
+const rq2 = freshRaise();
+rq2.st.events.length = 0;
+rq2.act('quiet:toggle');
+check('开免打扰会有反馈气泡（force 这一句）', rq2.st.events.length === 1, String(rq2.st.events.length));
+
+// 10) 同一秒买两条鱼 → id 撞号，喂/捞永远作用在第一条
+const rf4 = freshRaise();
+rf4.st.setInfo('yb', 1000);
+rf4.act('fish:buy:2');
+rf4.act('fish:buy:2');
+const ids = fish.pondState(rf4.st).fishes.map((f) => f.id);
+check('同一秒买两条鱼，id 不撞号', new Set(ids).size === ids.length, JSON.stringify(ids));
+
+// 11) 读一次鱼塘状态就把存档标脏 → 菜单缓存永远失效
+const rf5 = freshRaise();
+rf5.st.flush(true);
+fish.pondState(rf5.st);
+check('读鱼塘状态不会把存档标脏（菜单缓存才有意义）', rf5.st.dirty === false);
+
+// 12) 没有题库的科目（艺术 / 研究生各科）课时修满后卡死
+const rex = freshRaise();
+rex.st.info.growth = 100000;
+rex.st.syncLevel();
+rex.st.save.studyInfo.art = 9;
+rex.act('study:xx-art');
+check('没有题库的科目按免考升学处理（不会卡在课时修满）', rex.st.save.studyInfo.art === 10 && rex.st.exam === null, `art=${rex.st.save.studyInfo.art}`);
 
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });

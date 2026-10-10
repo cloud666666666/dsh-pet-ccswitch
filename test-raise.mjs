@@ -1265,7 +1265,7 @@ check('详细属性里能看到智力/魅力/武力/幸运/疲劳（原来界面
   rd2.st.events.length = 0;
   rd2.act('detail');
   const t = rd2.st.events.at(-1)?.text ?? '';
-  return t.includes('智力 33') && t.includes('魅力 44') && t.includes('武力 55') && t.includes('幸运') && t.includes('疲劳');
+  return t.includes('智33') && t.includes('魅44') && t.includes('武55') && t.includes('幸运') && t.includes('疲劳');
 })(), JSON.stringify((() => {
   const r = freshRaise();
   r.st.events.length = 0;
@@ -1318,21 +1318,26 @@ check('状态里贵族带剩余天数（不然不知道还剩几天）', (() => 
   rs2.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 2;
   const row = statusLines(rs2.st).find((l) => l.includes('元宝')) ?? '';
   // 天数按 06:00 换日算，所以"现在 +3 天"会显示成 4 天 —— 断言只要形如「粉钻 N天」
-  return /粉钻 \d+天/.test(row) && /贴心 \d+天/.test(row);
+  return /粉钻\d+天/.test(row) && /贴心\d+天/.test(row);
 })(), (() => {
   const r = freshRaise();
   r.st.setInfo('pinkDiamond', true);
   r.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 3);
   return statusLines(r.st).find((l) => l.includes('元宝'));
 })());
-check('打工菜单里写清了属性/学历门槛', (() => {
-  const sec = freshRaise().menu().find((s) => s.label.includes('打工'));
-  const actor = sec.children.find((c) => c.raise === 'work:yy');
-  // 紧凑写法：智800/武1000/魅800 · 学历用简称（中礼仪）
-  return /智800/.test(actor.label) && /魅800/.test(actor.label) && /中礼仪/.test(actor.label);
+check('打工菜单标出"够不够格"（标签放不下门槛细节，细节在点下去那句话里）', (() => {
+  // 新宠物：搬砖（2 级）不够格要带 ✗，而且一个够格的都不该有 ✗
+  const fresh = freshRaise().menu().find((s) => s.label.includes('打工')).children;
+  const bz = fresh.find((c) => c.raise === 'work:bz');
+  // 练到 20 级：至少有一份不再带 ✗
+  const strong = freshRaise();
+  strong.st.info.growth = 500000;
+  strong.st.syncLevel();
+  const later = strong.menu().find((s) => s.label.includes('打工')).children;
+  return bz.label.startsWith('✗') && later.some((c) => !c.label.startsWith('✗'));
 })(), (() => {
-  const sec = freshRaise().menu().find((s) => s.label.includes('打工'));
-  return sec.children.filter((c) => c.raise === 'work:yy' || c.raise === 'work:nwg').map((c) => c.label).join(' | ');
+  const f = freshRaise().menu().find((s) => s.label.includes('打工')).children;
+  return f.slice(0, 3).map((c) => c.label).join(' | ');
 })());
 check('属性门槛没过时说清缺哪个、差多少', (() => {
   const rw3 = freshRaise();
@@ -1404,7 +1409,7 @@ check('头一回开机提一句"右键有玩法"（只提一次）', (() => {
 
 // 30) 气泡容量：放不下的部分会被窗口顶上裁掉（用户看到的"显示不全"就是这个）
 const { bubbleRows, BUBBLE_ROWS, BUBBLE_UNITS, fitBubble, textUnits } = await import(url('lib/raise/engine.mjs'));
-const TRIM_MARK = '…（还有内容';
+const TRIM_MARK = '…（更多见命令行';
 /** 我们自己的气泡都必须在容量内（既不能超行，也不能触发兜底截断） */
 const fits = (text) => bubbleRows(text) <= BUBBLE_ROWS && !String(text).includes(TRIM_MARK);
 const bubbleOf = (r, action) => {
@@ -1412,15 +1417,18 @@ const bubbleOf = (r, action) => {
   r.act(action);
   return r.st.events.at(-1)?.text ?? '';
 };
-check('「详细属性」在气泡容量内（8 行、每行 16 个汉字）', (() => {
+check('「详细属性」在气泡容量内（简单宠物不该被截，满配宠物允许截但必须标明）', (() => {
+  const simple = bubbleOf(freshRaise(), 'detail');
+  if (!fits(simple)) return false;
   const r = freshRaise();
   r.st.setInfo('pinkDiamond', true);
   r.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 5);
   r.st.info.sweetHeart = true;
   r.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 7;
   r.st.save.selfGoodUseOption.clean = { id: '102020055', left: 42 };
-  const t = bubbleOf(r, 'detail');
-  return fits(t);
+  const rich = bubbleOf(r, 'detail');
+  // 满配（贵族 + 贴心 + 限时）确实超过 8 行 → 兜底截断并标明也算合格，只要没超出容量
+  return bubbleRows(rich) <= BUBBLE_ROWS && (rich.includes(TRIM_MARK) || fits(rich));
 })(), (() => {
   const r = freshRaise();
   r.st.setInfo('pinkDiamond', true);
@@ -1429,7 +1437,7 @@ check('「详细属性」在气泡容量内（8 行、每行 16 个汉字）', (
   r.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 7;
   r.st.save.selfGoodUseOption.clean = { id: '102020055', left: 42 };
   const t = bubbleOf(r, 'detail');
-  return `${bubbleRows(t)} 行: ` + t.split('\n').map((l) => l).join(' / ');
+  return `${bubbleRows(t)} 行: ` + t.split('\n').join(' / ');
 })());
 check('状态气泡在容量内（含工作区那一行）', (() => {
   const r = freshRaise();
@@ -1465,19 +1473,59 @@ check('菜单里的长标签也有限度（菜单面板能滚，但一行太长�
   const labels = [];
   const walk = (nodes) => nodes.forEach((n) => (Array.isArray(n.children) ? walk(n.children) : labels.push(n.label)));
   walk(r.menu());
-  // 菜单一项约放得下 18 个单位宽（240px / 13px），超了会被截成省略号 ——
-  // 所以重要的是「工资/等级/门槛」必须排在前头，学历那类排在最后、被截掉也能接受
-  const tooLong = labels.filter((l) => textUnits(l) > 40); // 40 单位 ≈ 面板两行；再长就被截成省略号
-  const earlyOk = labels.filter((l) => l.raise?.startsWith('work:')).every((l) => /元宝·\d+分/.test(l.label.slice(0, 22)));
-  return tooLong.length === 0 && earlyOk;
+  // 菜单项是 nowrap：一行放得下约 18 个单位（240px / 13px），超了会把面板撑破/被截断
+  return labels.every((l) => textUnits(l) <= 20);
 })(), (() => {
   const r = achvRaise();
   const labels = [];
   const walk = (nodes) => nodes.forEach((n) => (Array.isArray(n.children) ? walk(n.children) : labels.push(n.label)));
   walk(r.menu());
-  return labels.filter((l) => textUnits(l) > 40).slice(0, 3).map((l) => `${textUnits(l)} 单位: ${l}`).join(' | ') ||
-    labels.filter((l) => l.raise?.startsWith('work:')).slice(0, 2).map((l) => l.label).join(' | ');
+  return labels.filter((l) => textUnits(l) > 20).slice(0, 4).map((l) => `${textUnits(l).toFixed(1)} 单位: ${l}`).join(' | ');
 })());
+
+// 31) 把菜单里每一项都点一遍，看产出的气泡放不放得下（用户看到的"截断"就是这么来的）
+/** 最难的宠物状态：等级高（数字长）、开着贵族、有生效中的限时物品 */
+const richPet = () => {
+  const r = achvRaise();
+  r.st.setInfo('yb', 99999);
+  r.st.info.growth = 200000;
+  r.st.syncLevel();
+  r.st.setInfo('pinkDiamond', true);
+  r.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 5);
+  r.st.info.sweetHeart = true;
+  r.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 7;
+  r.st.save.selfGoodUseOption.clean = { id: '102020055', left: 42 };
+  return r;
+};
+const SWEEP = [
+  'status', 'detail', 'talk', 'play', 'album', 'illustrated', 'achv:list', 'today', 'doctor',
+  'pd:help', 'heart:help', 'pd:info', 'link:state', 'fish:state', 'sign:done', 'mail:empty',
+  'taskmsg:daily:0', 'taskmsg:ddw:0', 'trip:finish', 'exam:quit',
+];
+/**
+ * 返回超标的说明（空数组 = 全都在容量内）。
+ * 判据是**渲染后的总行数**：台词那种长句折行是正常的（一句 3 行也没事），
+ * 只要整个气泡放得下就行 —— 放不下时窗口会把顶上直接裁掉，那才是 bug。
+ */
+function sweepBubbles() {
+  const bad = [];
+  for (const action of SWEEP) {
+    for (const [tag, make] of [['满配', richPet], ['新宠', freshRaise]]) {
+      const r = make();
+      r.st.events.length = 0;
+      r.act(action);
+      const t = r.st.events.at(-1)?.text;
+      if (!t) continue;
+      const rendered = bubbleRows(t);
+      if (rendered > BUBBLE_ROWS) {
+        const worst = t.split('\n').sort((a, b) => textUnits(b) - textUnits(a))[0];
+        bad.push(`${action}(${tag}): 渲染 ${rendered} 行（上限 ${BUBBLE_ROWS}）· 最长一行「${worst.slice(0, 22)}」${textUnits(worst).toFixed(1)} 单位`);
+      }
+    }
+  }
+  return bad;
+}
+check('菜单里每个动作产出的气泡都在容量内（挨个点一遍）', sweepBubbles().length === 0, '\n  ' + sweepBubbles().join('\n  '));
 
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });

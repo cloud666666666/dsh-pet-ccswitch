@@ -1089,6 +1089,43 @@ check('换宠物时成就缓存会被清掉（新蛋不该继承旧宠物的成�
   return hadBefore && !achv.isUnlocked(r5.st, 'hatch') && achv.statOf(r5.st, 'tokens') === 0;
 })());
 
+// 26) 状态要看得到实际数值（物品加的是固定值，只给百分比没法算会不会溢出）
+const { statusLines } = await import(url('lib/raise/menu.mjs'));
+const { effectText } = await import(url('lib/raise/items.mjs'));
+const rv2 = freshRaise();
+rv2.st.info.hunger = 1234;
+rv2.st.info.clean = 56;
+const statusRows = statusLines(rv2.st).join('\n');
+check('状态里的饥饿给的是「当前/上限」而不是百分比', /饥饿 .*1234\/\d+/.test(statusRows), statusRows.split('\n')[2]);
+check('清洁同理（数值小的时候也对）', /清洁 .*56\/\d+/.test(statusRows), statusRows.split('\n')[3]);
+check('不再出现"%"（百分比交给进度条表达）', !statusRows.includes('%'), statusRows.split('\n').slice(2, 5).join(' | '));
+
+check('用完物品回显「之前 → 之后」', effectText([{ key: 'hunger', before: 1000, after: 1123 }]) === '\n饥饿 1000→1123', JSON.stringify(effectText([{ key: 'hunger', before: 1000, after: 1123 }])));
+check('多栏一起变就都报出来', effectText([{ key: 'hunger', before: 1, after: 2 }, { key: 'mood', before: 3, after: 4 }]).includes('心情 3→4'));
+check('喂食会把变化量接到气泡那句后面', (() => {
+  const rf2 = freshRaise();
+  rf2.st.info.hunger = 100;
+  rf2.st.events.length = 0;
+  rf2.act('use:food:10013006'); // 冰淇淋：饥饿 +360
+  const txt = rf2.st.events.at(-1)?.text ?? '';
+  return txt.includes('饥饿 100→') && Number(rf2.st.info.hunger) === 460;
+})(), JSON.stringify(freshRaise().st.events));
+check('喂到饱会如实显示"没涨"（封顶了）', (() => {
+  const rf3 = freshRaise();
+  rf3.st.info.hunger = rf3.st.meta.hungerMax; // 已经满了
+  rf3.st.events.length = 0;
+  rf3.act('use:food:10013006');
+  const txt = rf3.st.events.at(-1)?.text ?? '';
+  const m = txt.match(/饥饿 (\d+)→(\d+)/);
+  return Boolean(m) && m[1] === m[2]; // 前=后，一眼看出这一口白吃了
+})(), JSON.stringify((() => {
+  const rf4 = freshRaise();
+  rf4.st.info.hunger = rf4.st.meta.hungerMax;
+  rf4.st.events.length = 0;
+  rf4.act('use:food:10013006');
+  return rf4.st.events.at(-1)?.text;
+})()));
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

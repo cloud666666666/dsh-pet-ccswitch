@@ -963,7 +963,9 @@ rstage.st.syncLevel();
 rstage.st.info.growth = 20000;
 rstage.st.syncLevel();
 check('跨阶段会通知（蛋 → 幼年）', stageMsg === 'Egg→Kid', String(stageMsg));
-check('跨阶段会请桌宠重载配置（新的动画池才生效）', rstage.st.pendingReloadUntil > Date.now());
+// 重载不靠"通知"，靠宿主一直报的阶段（桌宠比对 sessionStorage）——
+// 这里就断言宿主用来下发的那份状态确实变了
+check('跨阶段后 stage() 跟着变（宿主按它下发，桌宠据此决定重载）', rstage.st.stage() === 'Kid', rstage.st.stage());
 
 // 25) 成就墙
 const achv = await import(url('lib/raise/achv.mjs'));
@@ -997,18 +999,27 @@ check('同一 tick 里就把「一百万 token」解锁了', (() => {
   return achv.isUnlocked(r2.st, 'tok1m');
 })());
 
-check('连续天数：昨天来过就 +1，断了从头数', (() => {
+check('连续天数：昨天写过就 +1，断了从头数，昨天没写就归零', (() => {
   const rd = freshRaise();
   const st = rd.st;
   achv.list(st); // 先把进度对象建出来
   const today = st.dayStart();
+  // 昨天有流量 + 时间连续 → 链条 +1
+  achv.bump(st, 'dayTokens', 1234); // 这是"刚结束那天"的流量
   st.achv.stats.lastDay = today - 86400;
   st.achv.stats.streak = 3;
   achv.newDay(st);
-  const ok1 = achv.statOf(st, 'streak') === 4;
-  st.achv.stats.lastDay = today - 86400 * 5; // 断了五天
+  const ok1 = achv.statOf(st, 'streak') === 4 && achv.statOf(st, 'dayTokens') === 0;
+  // 昨天没流量 → 归零（"连写"看的是写没写，不是开没开机）
+  achv.bump(st, 'dayTokens', 0);
+  st.achv.stats.lastDay = today - 86400;
   achv.newDay(st);
-  return ok1 && achv.statOf(st, 'streak') === 1;
+  const ok2 = achv.statOf(st, 'streak') === 0;
+  // 隔了五天再写 → 从 1 重新数
+  achv.bump(st, 'dayTokens', 999);
+  st.achv.stats.lastDay = today - 86400 * 5;
+  achv.newDay(st);
+  return ok1 && ok2 && achv.statOf(st, 'streak') === 1;
 })());
 check('跨天会把"单日 token"清零（累计值留着）', (() => {
   const rd = freshRaise();
@@ -1036,6 +1047,32 @@ check('成就在菜单里有一栏，条目数与表一致', (() => {
   const sec = ra.menu().find((s) => s.label.includes('成就'));
   return Boolean(sec) && sec.children.length === achv.ACHIEVEMENTS.length + 2; // +「看看成就」+「图鉴」
 })(), String(ra.menu().find((s) => s.label.includes('成就'))?.children.length));
+check('成就关掉时不摆那面永远 0/17 的墙（只留图鉴）', (() => {
+  const sec = freshRaise().menu().find((s) => s.label.includes('图鉴') || s.label.includes('成就'));
+  return sec.label.includes('图鉴') && !sec.label.includes('成就') && sec.children.length === 1;
+})(), JSON.stringify(freshRaise().menu().map((s) => s.label)));
+check('生产默认是开着成就的（测试里为了确定性才关）', settings.resolve('achievements').value === true);
+check('成就数据坏了也不会把整分钟结算带崩', (() => {
+  const r4 = freshRaise();
+  r4.st.save.saveJsonData.achv = '{ 这不是 JSON';
+  r4.st.achv = null; // 丢掉缓存，逼它重新解析
+  try {
+    achv.list(r4.st);
+    r4.st.hooks.tick.forEach((f) => f(r4.st));
+    return true;
+  } catch {
+    return false;
+  }
+})());
+check('换宠物时成就缓存会被清掉（新蛋不该继承旧宠物的成就墙）', (() => {
+  const r5 = achvRaise();
+  achv.check(r5.st);
+  const hadBefore = achv.isUnlocked(r5.st, 'hatch');
+  r5.st.save.havePet = false;
+  r5.st.save.isBury = true;
+  r5.act('adopt:MM');
+  return hadBefore && !achv.isUnlocked(r5.st, 'hatch') && achv.statOf(r5.st, 'tokens') === 0;
+})());
 
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });

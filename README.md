@@ -146,6 +146,23 @@ npx dsh-pet-ccswitch raise --menu          # 把当前菜单树打出来（里�
   实测 195px 高、顶边距还剩 86px，一点没裁
 - 万一还是超了（13 行以上），会截断并明确标出「…（还有 N 行）」，绝不静默裁掉
 
+**配图（相簿照片与鱼）**
+
+原版 qqpet 是有图的：相簿里躺着 **231 张真实旅行照片**（`resources/pet/album/*.webp`，
+版权归《旅行青蛙·中国之旅》），池塘里每种鱼也有一张图（`fishing/res/fish/<avator>.png`，
+版权归腾讯）。**这些没有打包进本包**（版权 + 体积），而是从你本机的 qqpet 素材目录现取：
+
+```sh
+npx dsh-pet-ccswitch raise config assetsFrom=D:\Project\qqpet\resources\pet
+npx dsh-pet-ccswitch restart
+```
+
+配好之后：旅游回来会**把明信片照片贴进气泡**，「📷 相簿」会贴最新那张，「🐟 看看鱼塘」会贴第一条鱼的图。
+没配就不贴图（气泡里会是破图，所以宁可空着），文字功能一切照旧。
+
+> 之所以能这样接：dsh-pet 的碎碎念气泡本来就支持配图（表情包走的就是这条路），
+> 我们只是把同一个字段借来贴相簿与鱼 —— 桌宠那边一行补丁都不用加。
+
 **没搬过来的三块**（不是偷懒，是搬不了）
 
 | 没搬的 | 为什么 |
@@ -229,6 +246,7 @@ CC Switch  ←── 读 cc-switch.db（用量/服务商/usage_script）──�
 | `PET_RAISE_LINK_GIT` | `on` | 工作区脏 → 它变脏（提交 = 洗澡） |
 | `PET_RAISE_LINK_ERRORS` | `on` | 请求错误率影响心情 |
 | `PET_RAISE_LINK_EVERY` | `300` | 工作联动的采样间隔（秒） |
+| `PET_RAISE_ASSETS` | 空 | **本机 qqpet 的素材目录**（`<qqpet>/resources/pet`）：指着它，相簿与池塘就会显示原版的照片与鱼（素材不在本包里，见「配图」一节） |
 
 上面这些也可以写进**配置文件** `%LOCALAPPDATA%\dsh-pet\user\raise-config.json`，
 优先级是 **配置文件 > 环境变量 > 默认值**。日常改配置不用碰环境变量：

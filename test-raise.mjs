@@ -1527,6 +1527,43 @@ function sweepBubbles() {
 }
 check('菜单里每个动作产出的气泡都在容量内（挨个点一遍）', sweepBubbles().length === 0, '\n  ' + sweepBubbles().join('\n  '));
 
+// 32) 相簿/池塘的原版配图：只在配了素材目录时才贴图（素材不在这个包里，版权原因）
+check('没配素材目录时不贴图（避免气泡里出现破图）', (() => {
+  fs.rmSync(settings.CONFIG_FILE, { force: true });
+  const r = achvRaise();
+  r.st.save.saveJsonData.album = JSON.stringify([{ id: 'g_anhui1', city: '安徽省', d: 1 }]);
+  r.st.events.length = 0;
+  r.act('album');
+  const ev = r.st.events.at(-1);
+  return ev && ev.text.includes('明信片') && !ev.image;
+})(), JSON.stringify(achvRaise().st.events.at(-1)?.image));
+check('配了素材目录后：相簿贴最新那张照片', (() => {
+  settings.writeConfig({ assetsFrom: 'D:/Project/qqpet/resources/pet' });
+  const r = achvRaise();
+  r.st.save.saveJsonData.album = JSON.stringify([{ id: 'g_anhui1', city: '安徽省', d: 1 }, { id: 'u_alipay', city: '北京市', d: 2 }]);
+  r.st.events.length = 0;
+  r.act('album');
+  return r.st.events.at(-1)?.image === 'album/u_alipay';
+})(), String(achvRaise().st.events.at(-1)?.image));
+check('配了素材目录后：看鱼塘会贴第一条鱼的图', (() => {
+  const r = achvRaise();
+  r.st.setInfo('yb', 1000);
+  r.act('fish:buy:2'); // 金鱼 avator=2
+  r.st.events.length = 0;
+  r.act('fish:state');
+  return r.st.events.at(-1)?.image === 'fish/2';
+})(), String((() => {
+  const r = achvRaise();
+  return r.st.imageOf('fish', 2);
+})()));
+check('旅游回来的明信片也带图', (() => {
+  const r = achvRaise();
+  r.st.setInfo('mood', 500);
+  const shot = r.st.imageOf('album', 'g_anhui1');
+  return shot === 'album/g_anhui1';
+})());
+fs.rmSync(settings.CONFIG_FILE, { force: true });
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

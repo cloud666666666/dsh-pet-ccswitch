@@ -1571,7 +1571,7 @@ check('喂食贴上那个食物的图标（配了素材目录）', (() => {
   r.st.events.length = 0;
   r.act('use:food:10013006'); // 冰淇淋，url 指向 img_res/food/10013006.*
   const ev = r.st.events.at(-1);
-  return Boolean(ev?.image) && ev.image.startsWith('item/food/10013006.');
+  return Boolean(ev?.image) && ev.image.startsWith('asset/img_res/food/10013006.');
 })(), String((() => {
   settings.writeConfig({ assetsFrom: 'D:/Project/qqpet/resources/pet' });
   const r = achvRaise();
@@ -1584,7 +1584,7 @@ check('买东西也贴图标', (() => {
   r.st.setInfo('yb', 99999);
   r.st.events.length = 0;
   r.act('buy:food:100010032');
-  return /^item\/food\/100010032\./.test(r.st.events.at(-1)?.image ?? '');
+  return /^asset\/img_res\/food\/100010032\./.test(r.st.events.at(-1)?.image ?? '');
 })(), String((() => {
   const r = achvRaise();
   r.st.setInfo('yb', 99999);

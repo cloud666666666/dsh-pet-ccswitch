@@ -347,12 +347,50 @@ async function cmdUninstall(argv) {
 }
 
 /**
+ * 养成配置：看当前生效值，或改配置。
+ *   npx dsh-pet-ccswitch raise config                                  看（会标出每个值来自哪一级）
+ *   npx dsh-pet-ccswitch raise config calendar=holiday-cn weather=on    改（写进 user/raise-config.json）
+ * 为什么要有这个：宿主是自启脚本拉起来的，让用户去设 Windows 环境变量再重启门槛太高。
+ */
+async function cmdRaiseConfig(argv) {
+  const settings = await import('../lib/raise/settings.mjs');
+  const pairs = argv.filter((a) => a.includes('='));
+  if (pairs.length) {
+    const bad0 = [];
+    const patch = {};
+    for (const p of pairs) {
+      const [k, ...rest] = p.split('=');
+      const spec = settings.KEYS[k];
+      if (!spec) {
+        bad0.push(`${k}（可选：${Object.keys(settings.KEYS).join('、')}）`);
+        continue;
+      }
+      const val = settings.coerce(spec.kind, rest.join('='));
+      if (val === undefined) bad0.push(`${k}=${rest.join('=')} 这个值不认`);
+      else patch[k] = val;
+    }
+    if (bad0.length) return say(bad('配置项不认识：' + bad0.join('；')));
+    settings.writeConfig(patch);
+    say(ok(`已写入 ${settings.CONFIG_FILE}`));
+    say(`重启宿主生效：npx dsh-pet-ccswitch restart`);
+  }
+  const all = settings.resolveAll();
+  const FROM = { config: '配置文件', env: '环境变量', default: '默认' };
+  say('\n养成配置（优先级：配置文件 > 环境变量 > 默认）');
+  for (const [k, v] of Object.entries(all)) {
+    say(`  ${k.padEnd(14)} ${(v.value === '' ? '(空)' : String(v.value)).padEnd(14)} [${FROM[v.from]}]`);
+  }
+}
+
+/**
  * 养成：看状态，也可以直接在命令行上动手（等于点右键菜单里那一项）。
  *   npx dsh-pet-ccswitch raise                      看宠物状态
  *   npx dsh-pet-ccswitch raise status|talk|doctor…  执行一个动作（动作名 = 菜单叶子上的 raise 串）
+ *   npx dsh-pet-ccswitch raise config [k=v …]       看/改养成配置（日历、天气、汇率…）
  *   npx dsh-pet-ccswitch raise --menu               把当前菜单树打出来（排障用）
  */
 async function cmdRaise(argv) {
+  if (argv[0] === 'config') return cmdRaiseConfig(argv.slice(1));
   if (!(await hostAlive())) {
     say(bad('宿主没在运行。先 `npx dsh-pet-ccswitch start`（或让 CC Switch 跑起来）'));
     return;

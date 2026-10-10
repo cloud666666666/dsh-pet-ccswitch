@@ -676,6 +676,94 @@ const rolled = taskList(rh.st, 'daily').map((t) => t.label);
 check('日历到手后按节假日抽（多一条节日任务）', rolled.some((l) => l.includes('国庆节快乐')), rolled.join(' / '));
 rh.stop();
 
+// 17) 联网那两块（日历 / 天气）：数据源解析 + 本机算的节气
+const settings = await import(url('lib/raise/settings.mjs'));
+const realFetch = globalThis.fetch;
+const stubFetch = (handler) => {
+  globalThis.fetch = async (u, o) => handler(String(u), o);
+};
+const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj, text: async () => JSON.stringify(obj) });
+
+// 日历：holiday-cn 源（节假日查表 + 节气本机算）
+const holidayJson = {
+  year: 2026,
+  days: [
+    { name: '国庆节', date: '2026-10-01', isOffDay: true },
+    { name: '国庆节', date: '2026-10-10', isOffDay: false },
+  ],
+};
+stubFetch((u) => {
+  if (u.includes('holiday-cn')) return jsonRes(holidayJson);
+  return jsonRes({});
+});
+const cal2 = cal.createCalendar({ mode: 'holiday-cn', log: () => {} });
+const todayEntry = await cal2.load();
+globalThis.fetch = realFetch;
+check('holiday-cn 源：今天（2026-10-10 是调休班）被认成「国庆节，要上班」', todayEntry?.holiday?.name === '国庆节' && todayEntry.holiday.off === false, JSON.stringify(todayEntry));
+check('日历那句写成「国庆节调休上班」', cal.dayText(cal2).includes('国庆节调休上班'), cal.dayText(cal2));
+check('调休那天不会算成放假（任务/邮件都看这个）', cal.festival(cal2.today()).includes('调休'));
+
+// 节气：本机算，拿公开历法对几条
+const termOf2026 = (y, m, d) => cal.termOf(new Date(y, m - 1, d));
+check('节气（本机算）：立春 2026-02-04', termOf2026(2026, 2, 4) === '立春', String(termOf2026(2026, 2, 4)));
+check('节气：清明 2026-04-05', termOf2026(2026, 4, 5) === '清明', String(termOf2026(2026, 4, 5)));
+check('节气：霜降 2026-10-23', termOf2026(2026, 10, 23) === '霜降', String(termOf2026(2026, 10, 23)));
+check('节气：冬至 2026-12-22', termOf2026(2026, 12, 22) === '冬至', String(termOf2026(2026, 12, 22)));
+check('没有节气的日子返回 null', termOf2026(2026, 10, 10) === null, String(termOf2026(2026, 10, 10)));
+
+// 天气：恶劣天气的提醒文案（stub 掉 wttr.in）
+const weather = await import(url('lib/raise/weather.mjs'));
+const wttr = (code, opts = {}) => ({
+  current_condition: [{ weatherCode: String(code) }],
+  weather: [
+    {
+      maxtempC: String(opts.max ?? 25),
+      mintempC: String(opts.min ?? 15),
+      hourly: [{ time: String((new Date().getHours() + 1) * 100), weatherCode: String(code), windspeedKmph: String(opts.wind ?? 5) }],
+    },
+    { maxtempC: String(opts.tomorrowMax ?? 24), mintempC: '14', hourly: [] },
+  ],
+});
+// 天气：预警与播报的文案（纯函数，不用碰"今天说过了"那层）
+const wSunny = { code: 113, max: 25, min: 15, tomorrowMax: 24, hours: [{ hour: new Date().getHours() + 1, code: 113, wind: 5 }] };
+check('好天气按「当地」播报，不会写成「今天Beijing晴」', weather.forecast(wSunny, 'Beijing').includes('今天当地晴'), weather.forecast(wSunny, 'Beijing'));
+check('填了中文城市就用城市名', weather.forecast(wSunny, '北京').includes('今天北京晴'), weather.forecast(wSunny, '北京'));
+check('下雨会提醒带伞', weather.forecast({ ...wSunny, code: 296, hours: [{ hour: 9, code: 296, wind: 5 }] }, '北京').includes('带伞'));
+check('明天降温 8 度以上会提醒加衣服', weather.warning({ ...wSunny, max: 20, tomorrowMax: 10 })?.includes('降温'), weather.warning({ ...wSunny, max: 20, tomorrowMax: 10 }));
+check('刮大风会提醒', weather.warning({ ...wSunny, hours: [{ hour: 9, code: 113, wind: 45 }] })?.includes('风很大'));
+check('好天气没有预警', weather.warning(wSunny) === null);
+
+// 恶劣天气必定提醒 + 每天只说一次
+const rw4 = freshRaise();
+stubFetch(() => jsonRes(wttr(200))); // 雷阵雨
+const warnLine = await weather.weatherNews(rw4.st, { enabled: true, city: '北京', launch: false });
+check('恶劣天气必定提醒（雷阵雨）', warnLine?.includes('雷阵雨') && warnLine.includes('别待在外面'), warnLine);
+check('同一天不会重复播报', (await weather.weatherNews(rw4.st, { enabled: true, city: '北京', launch: true })) === null);
+check('关掉的时候一句话都不说', (await weather.weatherNews(freshRaise().st, { enabled: false, city: '', launch: true })) === null);
+globalThis.fetch = realFetch;
+
+// 18) 配置来源：配置文件 > 环境变量 > 默认
+const cfgFile = settings.CONFIG_FILE;
+fs.rmSync(cfgFile, { force: true });
+delete process.env.PET_RAISE_CALENDAR;
+check('默认：日历关着', settings.resolve('calendar').value === 'off' && settings.resolve('calendar').from === 'default');
+process.env.PET_RAISE_CALENDAR = 'ankio';
+check('环境变量能改', settings.resolve('calendar').value === 'ankio' && settings.resolve('calendar').from === 'env');
+settings.writeConfig({ calendar: 'holiday-cn', weather: true, growthPerMTok: 50 });
+check('配置文件优先级更高', settings.resolve('calendar').value === 'holiday-cn' && settings.resolve('calendar').from === 'config');
+check('开关类认 on/off 与布尔', settings.resolve('weather').value === true && settings.coerce('onoff', 'off') === false);
+check('数字类认数字，乱填就当没填', settings.resolve('growthPerMTok').value === 50 && settings.coerce('number', 'abc') === undefined);
+check('不认识的配置项直接报错', (() => {
+  try {
+    settings.resolve('并不存在的项');
+    return false;
+  } catch {
+    return true;
+  }
+})());
+delete process.env.PET_RAISE_CALENDAR;
+fs.rmSync(cfgFile, { force: true });
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

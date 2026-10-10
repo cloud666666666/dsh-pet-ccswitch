@@ -1642,6 +1642,75 @@ check('旅游回来的明信片也带图', (() => {
 })());
 fs.rmSync(settings.CONFIG_FILE, { force: true });
 
+// 33) 保持姿势：上课/打工/旅游期间"看起来在忙"，生病期间"看起来蔫着"
+check('上课会保持"在忙"的姿势，下课就松开', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('study:xx-chinese');
+  const held = r.st.holdName;
+  advanceTask(r.st, 45); // 一节课上完
+  return Boolean(held) && r.st.holdName === '';
+})(), String(freshRaise().st.holdName));
+check('打工 / 旅游同样保持', (() => {
+  const rw = freshRaise();
+  rw.st.info.growth = 20000;
+  rw.st.syncLevel();
+  rw.act('work:bz');
+  const workHold = rw.st.holdName;
+  advanceTask(rw.st, 30);
+  const rt = freshRaise();
+  rt.act('trip');
+  const tripHold = rt.st.holdName;
+  advanceTask(rt.st, 60);
+  return Boolean(workHold) && Boolean(tripHold) && rw.st.holdName === '' && rt.st.holdName === '';
+})());
+check('生病时保持蔫着的姿势，治好就松开', (() => {
+  const r = freshRaise();
+  r.st.setActivity('ill', '0-');
+  r.st.setInfo('health', 4);
+  const sick = r.st.holdName;
+  r.st.setInfo('health', 5); // 治好
+  return Boolean(sick) && r.st.holdName === '';
+})());
+check('重启后续上的活儿也要保持姿势', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  r.st.save.saveJsonData.activity = '10';
+  r.st.save.nowTimeLine = Math.floor(Date.now() / 1000) - 600;
+  r.st.flush(true);
+  const r2 = createRaise({ animations: ANIMS, log: () => {}, achievements: false }); // 换实例 = 模拟重启
+  r2.start();
+  const held = r2.st.holdName;
+  r2.stop();
+  return Boolean(held);
+})(), String((() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  r.st.save.saveJsonData.activity = '10';
+  r.st.flush(true);
+  const r2 = createRaise({ animations: ANIMS, log: () => {}, achievements: false });
+  r2.start();
+  const h = r2.st.holdName;
+  r2.stop();
+  return h;
+})()));
+check('心情见底导致工期中止时，姿势也得松开', (() => {
+  const r = freshRaise();
+  r.st.info.growth = 20000;
+  r.st.syncLevel();
+  r.act('work:bz');
+  const held = Boolean(r.st.holdName);
+  r.st.setInfo('mood', 0); // 心情见底 → 结算时 stopTask
+  r.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  r.st.tick();
+  return held && r.st.holdName === '';
+})());
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

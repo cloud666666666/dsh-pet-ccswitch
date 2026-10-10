@@ -978,11 +978,11 @@ ra.st.info.growth = 20000;
 ra.st.syncLevel();
 check('升到幼年期解锁「上学啦」', achv.check(ra.st).some((a) => a.id === 'kid'));
 ra.st.setInfo('yb', 20000);
-check('攒到一万解锁「万元户」（奖励是心情）', (() => {
-  const mood0 = ra.st.info.mood;
+ra.st.setInfo('mood', 100); // 先把心情压低，否则 +100 会被天花板吃掉、断言等于没测
+check('攒到一万解锁「万元户」（奖励 100 心情，得真的加上）', (() => {
   const got = achv.check(ra.st);
-  return got.some((a) => a.id === 'rich') && ra.st.info.mood >= mood0;
-})());
+  return got.some((a) => a.id === 'rich') && ra.st.info.mood === 200;
+})(), `mood ${ra.st.info.mood}`);
 
 check('累计用量计数：喂 100 万 token 会记进成就统计', (() => {
   const r2 = achvRaise();
@@ -1052,18 +1052,33 @@ check('成就关掉时不摆那面永远 0/17 的墙（只留图鉴）', (() => 
   return sec.label.includes('图鉴') && !sec.label.includes('成就') && sec.children.length === 1;
 })(), JSON.stringify(freshRaise().menu().map((s) => s.label)));
 check('生产默认是开着成就的（测试里为了确定性才关）', settings.resolve('achievements').value === true);
-check('成就数据坏了也不会把整分钟结算带崩', (() => {
-  const r4 = freshRaise();
-  r4.st.save.saveJsonData.achv = '{ 这不是 JSON';
-  r4.st.achv = null; // 丢掉缓存，逼它重新解析
-  try {
-    achv.list(r4.st);
-    r4.st.hooks.tick.forEach((f) => f(r4.st));
-    return true;
-  } catch {
-    return false;
+check('成就数据坏了也不会把整分钟结算带崩（语法坏 + 形状坏都算）', (() => {
+  // 成就**开着**才有意义：check 挂在 tick 钩子里，会跟着每分钟结算跑
+  for (const blob of ['{ 这不是 JSON', '{"unlocked":"x","stats":42}']) {
+    const r4 = achvRaise();
+    r4.st.save.saveJsonData.achv = blob;
+    r4.st.achv = null; // 丢掉缓存，逼它重新解析
+    try {
+      achv.list(r4.st);
+      r4.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+      r4.st.tick(); // 走的是真的结算路径（含 achv.check）
+    } catch (e) {
+      return false;
+    }
   }
+  return true;
 })());
+check('「走遍全国」看的是累计去过多少地方（清空记录也不会倒退）', (() => {
+  const r6 = achvRaise();
+  r6.st.save.gameSaveDatas.travel_china = [{ name: '北京市', value: 1 }, { name: '湖北省', value: 1 }];
+  r6.st.achv = null;
+  achv.list(r6.st); // 首次读会按当前记录回填累计值
+  const seeded = achv.statOf(r6.st, 'cities');
+  r6.st.setInfo('yb', 20000);
+  r6.act('trip:finish'); // 清空到访记录
+  const after = achv.list(r6.st).find((a) => a.id === 'travel35');
+  return seeded === 2 && r6.st.save.gameSaveDatas.travel_china.length === 0 && after.done === 2;
+})(), `cities=${achv.statOf(achvRaise().st, 'cities')}`);
 check('换宠物时成就缓存会被清掉（新蛋不该继承旧宠物的成就墙）', (() => {
   const r5 = achvRaise();
   achv.check(r5.st);

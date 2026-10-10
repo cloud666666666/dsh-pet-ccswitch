@@ -1409,7 +1409,7 @@ check('头一回开机提一句"右键有玩法"（只提一次）', (() => {
 
 // 30) 气泡容量：放不下的部分会被窗口顶上裁掉（用户看到的"显示不全"就是这个）
 const { bubbleRows, BUBBLE_ROWS, BUBBLE_UNITS, fitBubble, textUnits } = await import(url('lib/raise/engine.mjs'));
-const TRIM_MARK = '…（更多见命令行';
+const TRIM_MARK = '…（还有';
 /** 我们自己的气泡都必须在容量内（既不能超行，也不能触发兜底截断） */
 const fits = (text) => bubbleRows(text) <= BUBBLE_ROWS && !String(text).includes(TRIM_MARK);
 const bubbleOf = (r, action) => {

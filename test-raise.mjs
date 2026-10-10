@@ -1408,7 +1408,7 @@ check('头一回开机提一句"右键有玩法"（只提一次）', (() => {
 })());
 
 // 30) 气泡容量：放不下的部分会被窗口顶上裁掉（用户看到的"显示不全"就是这个）
-const { bubbleRows, BUBBLE_ROWS, BUBBLE_ROWS_TALL, BUBBLE_UNITS, fitBubble, textUnits } = await import(url('lib/raise/engine.mjs'));
+const { bubbleRows, BUBBLE_ROWS, BUBBLE_ROWS_TALL, BUBBLE_IMG_ROWS, BUBBLE_UNITS, fitBubble, textUnits } = await import(url('lib/raise/engine.mjs'));
 const TRIM_MARK = '…（还有';
 /** 我们自己的气泡都必须在容量内（既不能超行，也不能触发兜底截断） */
 const fits = (text) => bubbleRows(text) <= BUBBLE_ROWS && !String(text).includes(TRIM_MARK);
@@ -1530,6 +1530,7 @@ check('菜单里每个动作产出的气泡都在容量内（挨个点一遍）'
 // 32) 相簿/池塘的原版配图：只在配了素材目录时才贴图（素材不在这个包里，版权原因）
 check('没配素材目录时不贴图（避免气泡里出现破图）', (() => {
   fs.rmSync(settings.CONFIG_FILE, { force: true });
+  delete process.env.PET_RAISE_ASSETS;
   const r = achvRaise();
   r.st.save.saveJsonData.album = JSON.stringify([{ id: 'g_anhui1', city: '安徽省', d: 1 }]);
   r.st.events.length = 0;
@@ -1555,6 +1556,83 @@ check('配了素材目录后：看鱼塘会贴第一条鱼的图', (() => {
 })(), String((() => {
   const r = achvRaise();
   return r.st.imageOf('fish', 2);
+})()));
+const itemsMod = await import(url('lib/raise/items.mjs'));
+check('喂食贴上那个食物的图标（配了素材目录）', (() => {
+  settings.writeConfig({ assetsFrom: 'D:/Project/qqpet/resources/pet' });
+  const r = achvRaise();
+  r.st.info.hunger = 100;
+  r.st.events.length = 0;
+  r.act('use:food:10013006'); // 冰淇淋，url 指向 img_res/food/10013006.*
+  const ev = r.st.events.at(-1);
+  return Boolean(ev?.image) && ev.image.startsWith('item/food/10013006.');
+})(), String((() => {
+  settings.writeConfig({ assetsFrom: 'D:/Project/qqpet/resources/pet' });
+  const r = achvRaise();
+  r.st.events.length = 0;
+  r.act('use:food:10013006');
+  return r.st.events.at(-1)?.image;
+})()));
+check('买东西也贴图标', (() => {
+  const r = achvRaise();
+  r.st.setInfo('yb', 99999);
+  r.st.events.length = 0;
+  r.act('buy:food:100010032');
+  return /^item\/food\/100010032\./.test(r.st.events.at(-1)?.image ?? '');
+})(), String((() => {
+  const r = achvRaise();
+  r.st.setInfo('yb', 99999);
+  r.st.events.length = 0;
+  r.act('buy:food:100010032');
+  return r.st.events.at(-1)?.image;
+})()));
+check('领奖只有一件时贴图标，多件时不贴（贴哪张都偏心）', (() => {
+  const { give } = itemsMod;
+  const one = achvRaise();
+  one.st.events.length = 0;
+  give(one.st, [goodOf('food', '100010032')], '给你一件');
+  const many = achvRaise();
+  many.st.events.length = 0;
+  give(many.st, [goodOf('food', '100010032'), goodOf('toy', 't0002')], '给你两件');
+  return Boolean(one.st.events.at(-1)?.image) && !many.st.events.at(-1)?.image;
+})(), String((() => {
+  const r = achvRaise();
+  r.st.events.length = 0;
+  itemsMod.give(r.st, [goodOf('food', '100010032')], 'x');
+  return r.st.events.at(-1)?.image;
+})()));
+check('有徽章的那三个成就贴徽章（其余没有图）', (() => {
+  const r = achvRaise();
+  r.st.setInfo('yb', 20000);
+  r.st.save.gameSaveDatas.travel_china = Array.from({ length: 35 }, (_, i) => ({ name: '市' + i, value: 1 }));
+  achv.bump(r.st, 'cities', 35);
+  r.st.events.length = 0;
+  const got = achv.check(r.st);
+  const travel = r.st.events.find((e) => e.text.includes('走遍全国'));
+  const other = got.find((a) => a.id === 'rich');
+  return Boolean(travel?.image === 'achv/travel') && Boolean(other);
+})(), String((() => {
+  const r = achvRaise();
+  r.st.setInfo('yb', 20000);
+  achv.bump(r.st, 'cities', 35);
+  achv.check(r.st);
+  return r.st.events.map((e) => (e.text.slice(0, 12) + ' → ' + (e.image || '(无图)'))).join(' | ');
+})()));
+check('「详细属性」贴主人自己的头像（配了 portrait 才贴，不会串角色）', (() => {
+  const noP = achvRaise();
+  noP.st.events.length = 0;
+  noP.act('detail');
+  const without = noP.st.events.at(-1)?.image ?? '';
+  settings.writeConfig({ portrait: 'C:/Users/x/pet.png' });
+  const withP = achvRaise();
+  withP.st.events.length = 0;
+  withP.act('detail');
+  return without === '' && withP.st.events.at(-1)?.image === 'portrait';
+})(), String((() => {
+  const r = achvRaise();
+  r.st.events.length = 0;
+  r.act('detail');
+  return r.st.events.at(-1)?.image;
 })()));
 check('旅游回来的明信片也带图', (() => {
   const r = achvRaise();

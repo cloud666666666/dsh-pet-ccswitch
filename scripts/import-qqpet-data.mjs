@@ -4,10 +4,12 @@
  * 用法：node scripts/import-qqpet-data.mjs [qqpet 仓库路径]
  *   默认 ../qqpet（与本仓库同级）；也可用环境变量 QQPET_DIR。
  *
- * 只搬「数据」，不搬「表现」：
+ * 只搬「数据」，不搬「美术」：
  *   - 保留   ：物品 id / 名称 / 类型 / 价格 / 属性效果 / 时长 / 学历与属性要求 / 描述
- *   - 剥掉   ：url、rectype —— 那是 QQ 原版美术（gif/png/svg），版权归腾讯，
- *              也不适合塞进 npm 包。表现改用 dsh-pet 自己的动画池（见 lib/raise/anim.mjs）。
+ *   - 也保留 ：`url` —— 它只是一个**路径字符串**（如 ./pet/img_res/food/100010032.gif），
+ *              图本身仍在用户本机的 qqpet 目录里（版权归腾讯，不进这个包）。
+ *              留着它，配了 assetsFrom 的人就能在气泡里贴物品图标（见 lib/host.mjs 的 resolvePic）。
+ *   - 剥掉   ：rectype（没用）
  *   - 空串/0/false 字段一并删掉，纯粹为了文件小、diff 好看。
  */
 import fs from 'node:fs';
@@ -32,7 +34,7 @@ const empty = (v) =>
 const compact = (obj) => {
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    if (k === 'url' || k === 'rectype') continue;
+    if (k === 'rectype') continue; // url 留着（只是路径，图在用户本机）
     if (empty(v)) continue;
     out[k] = v;
   }

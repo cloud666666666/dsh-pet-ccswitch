@@ -418,6 +418,51 @@ async function cmdRaiseImport(argv) {
   }
 }
 
+/**
+ * 工作联动接哪：**不用记参数**
+ *   npx dsh-pet-ccswitch raise link          自动找（当前目录 → Claude Code 最近的项目 → 会话目录）
+ *   npx dsh-pet-ccswitch raise link .        就用当前目录（在仓库里敲最省事）
+ *   npx dsh-pet-ccswitch raise link D:\Project  也可以指一个"装项目的目录"
+ *   npx dsh-pet-ccswitch raise link off      关掉
+ */
+async function cmdRaiseLink(argv) {
+  const settings = await import('../lib/raise/settings.mjs');
+  const { detectWorkspace, findRepos } = await import('../lib/raise/link.mjs');
+  const arg = argv.find((a) => !a.startsWith('--'));
+
+  if (arg === 'off') {
+    settings.writeConfig({ linkRepo: '' });
+    say(ok('已关掉工作联动'));
+  } else if (arg) {
+    const dir = path.resolve(arg);
+    if (!fs.existsSync(dir)) return say(bad('这个路径不存在：' + dir));
+    const repos = findRepos(dir);
+    if (!repos.length) return say(bad('这里既不是 git 仓库，里面也没有仓库：' + dir));
+    settings.writeConfig({ linkRepo: dir });
+    say(ok(`已接上：${dir}（盯到 ${repos.length} 个仓库）`));
+  } else {
+    // 就一句话的事：自动找
+    const cands = detectWorkspace({ cwd: process.cwd() });
+    if (!cands.length) return say(bad('没找到你的项目。可以指一个：raise link <仓库或装着项目的目录>'));
+    settings.writeConfig({ linkRepo: cands[0].dir });
+    say(ok(`已接上：${cands[0].dir}（${cands[0].from}）`));
+    for (const c of cands.slice(1, 4)) say(`  换这个也行：raise link "${c.dir}"`);
+  }
+
+  // 宿主在跑就重启一下，别让用户自己去想"要不要重启"
+  if (await hostAlive()) {
+    say('重启宿主生效…');
+    await cmdStop();
+    await new Promise((r) => setTimeout(r, 500));
+    await cmdStart();
+  } else {
+    say('（宿主没在跑，等它起来就生效）');
+  }
+  const { resolve } = settings;
+  const cur = resolve('linkRepo');
+  say(`当前工作区：${cur.value || '(未设置)'}  [${cur.from === 'config' ? '配置文件' : cur.from === 'env' ? '环境变量' : '默认'}]`);
+}
+
 /** 导出当前存档（字段与 qqpet 一致，可以直接丢回它的 userData 接着养） */
 async function cmdRaiseExport(argv) {
   const file = argv.find((a) => !a.startsWith('--')) || `raise-export-${new Date().toISOString().slice(0, 10)}.json`;
@@ -436,13 +481,15 @@ async function cmdRaiseExport(argv) {
  * 养成：看状态，也可以直接在命令行上动手（等于点右键菜单里那一项）。
  *   npx dsh-pet-ccswitch raise                      看宠物状态
  *   npx dsh-pet-ccswitch raise status|talk|doctor…  执行一个动作（动作名 = 菜单叶子上的 raise 串）
- *   npx dsh-pet-ccswitch raise config [k=v …]       看/改养成配置（日历、天气、汇率、工作联动…）
+ *   npx dsh-pet-ccswitch raise link [路径|off]      接上工作区（不填路径 = 自动找）
+ *   npx dsh-pet-ccswitch raise config [k=v …]       看/改养成配置（日历、天气、汇率…）
  *   npx dsh-pet-ccswitch raise import <存档>        把 qqpet 养的宠物搬过来
  *   npx dsh-pet-ccswitch raise export [文件]        导出一份能丢回 qqpet 的存档
  *   npx dsh-pet-ccswitch raise --menu               把当前菜单树打出来（排障用）
  */
 async function cmdRaise(argv) {
   if (argv[0] === 'config') return cmdRaiseConfig(argv.slice(1));
+  if (argv[0] === 'link') return cmdRaiseLink(argv.slice(1));
   if (argv[0] === 'import') return cmdRaiseImport(argv.slice(1));
   if (argv[0] === 'export') return cmdRaiseExport(argv.slice(1));
   if (!(await hostAlive())) {

@@ -1789,6 +1789,58 @@ check('续读时也只认一件（多余的键清掉）', (() => {
   return one === 1;
 })());
 
+// 35) 「我的项目在哪」自动找 + 一键接上
+const { detectWorkspace, findRepos } = await import(url('lib/raise/link.mjs'));
+const fakeHome = path.join(HOME, 'fakehome');
+fs.mkdirSync(path.join(fakeHome, '.claude', 'projects'), { recursive: true });
+const myRepo = path.join(HOME, 'myrepo');
+fs.mkdirSync(path.join(myRepo, '.git'), { recursive: true });
+const otherRepo = path.join(HOME, 'projects', 'other');
+fs.mkdirSync(path.join(otherRepo, '.git'), { recursive: true });
+fs.writeFileSync(
+  path.join(fakeHome, '.claude.json'),
+  JSON.stringify({
+    projects: {
+      [myRepo.split(path.sep).join('/')]: { lastStartTime: 2000 },
+      [otherRepo.split(path.sep).join('/')]: { lastStartTime: 1000 },
+    },
+  }),
+);
+check('自动找：在仓库里敲命令就用当前目录', (() => {
+  const c = detectWorkspace({ cwd: myRepo, home: fakeHome });
+  return c[0]?.dir === myRepo && c[0].from === '当前目录';
+})(), JSON.stringify(detectWorkspace({ cwd: myRepo, home: fakeHome })));
+check('自动找：不在仓库里时看 Claude Code 最近开过的项目', (() => {
+  // 注意别断言"必须是第一个"：这台机器的临时目录往上走会撞到家目录（它本身就是个仓库），
+  // 顺序取决于机器；有意义的是"最近开过的项目在候选里、且标着来源"
+  const c = detectWorkspace({ cwd: path.join(HOME, 'nothing'), home: fakeHome });
+  const hit = c.find((x) => x.dir.split(path.sep).join('/') === myRepo.split(path.sep).join('/'));
+  return hit?.from === 'Claude Code 最近的项目';
+})(), JSON.stringify(detectWorkspace({ cwd: path.join(HOME, 'nothing'), home: fakeHome })));
+check('自动找：家目录与盘根不算工作区（这台机器的家目录恰好是个仓库，正好拿它验）', (() => {
+  const realHome = os.homedir();
+  const c = detectWorkspace({ cwd: fakeHome, home: realHome });
+  const norm = (p) => path.resolve(p).replace(/[\/]+$/, '').toLowerCase();
+  return c.every((x) => norm(x.dir) !== norm(realHome) && norm(x.dir) !== norm(path.parse(path.resolve(x.dir)).root));
+})());
+check('自动找：一个仓库都不沾的地方，结果里不该有它', (() => {
+  const plain = path.join(HOME, 'plain');
+  fs.mkdirSync(plain, { recursive: true });
+  const c = detectWorkspace({ cwd: plain, home: fakeHome });
+  return !c.some((x) => x.dir === plain);
+})());
+check('findRepos：装着多个仓库的目录能扫出来（工作区可以是"项目根目录"）', findRepos(path.join(HOME, 'projects')).length >= 1);
+check('一键接上：立刻盯上那个目录里的仓库（不用重启）', (() => {
+  const r = achvRaise();
+  const before = r.st.linkState.repos.length; // 没接工作区时是 0
+  r.st.reinitLink(path.join(HOME, 'projects'));
+  return before === 0 && r.st.link.on && r.st.linkState.repos.length >= 1;
+})(), JSON.stringify((() => {
+  const r = achvRaise();
+  r.st.reinitLink(path.join(HOME, 'projects'));
+  return r.st.linkState;
+})()));
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

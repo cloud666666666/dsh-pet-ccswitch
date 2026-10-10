@@ -280,7 +280,26 @@ npx dsh-pet-ccswitch restart                                     # 重启生效
 
 ## 工作联动（把工作区接进宠物）
 
-给它一个仓库路径（或者一个装着好几个项目的目录，它会扫一层子目录），它就会盯着那里的状态：
+**配起来一句话**（不用记路径、不用改环境变量、更不用重启）：
+
+```sh
+npx dsh-pet-ccswitch raise link        # 自己找：当前目录 → Claude Code 最近开过的项目 → Claude Code 会话目录
+npx dsh-pet-ccswitch raise link .      # 或者就用当前目录（在仓库里敲命令时最省事）
+npx dsh-pet-ccswitch raise link off    # 关掉
+```
+
+**连命令都不用敲的方式**：右键菜单里点「🧹 接上工作区（自动找我的项目）」——
+它自己找好、立刻生效，还会告诉你找到了哪个目录。
+
+几条实现上的讲究：
+
+- **跳过家目录与盘根**：有些人家目录本身就是个 dotfiles 仓库，盯着它跑 `git status` 又慢又没意义
+- 也可以直接给它一个"装项目的目录"（比如 `D:\Project`），它会盯着里面每一个仓库
+- 找的线索是 Claude Code 自己的记录（`~/.claude.json` 的 `projects[].lastStartTime` 与会话目录里
+  最新那个会话文件的时间），所以"你最近在哪儿干活"它基本猜得准；猜错了换一个就是
+  `raise link <路径>`
+
+接上之后，它就会盯着那里的状态：
 
 | 外部信号 | 宠物这边 | 数值 |
 | --- | --- | --- |

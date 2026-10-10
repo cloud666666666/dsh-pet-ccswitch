@@ -56,6 +56,27 @@ async function hostPid() {
   } catch { return null; }
 }
 
+/**
+ * 桌宠窗口进程（electron 主进程，认命令行里的 electron-helper；--type= 那些是它的子进程，不算）。
+ * 用处在两处：status 里报数（桌面上是不是莫名多了几只），stop 里收干净 ——
+ * 宿主被强杀、或调试时手动起过实例，都会留下不认宿主的孤儿窗口。
+ */
+async function petWindows() {
+  try {
+    const out = await ps(
+      "Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" | Where-Object { $_.CommandLine -match 'electron-helper' -and $_.CommandLine -notmatch '--type=' } | Select-Object -ExpandProperty ProcessId",
+    );
+    return String(out || '').split(/\s+/).filter(Boolean).map(Number).filter(Boolean);
+  } catch { return []; }
+}
+
+async function killPetWindows() {
+  const n = await ps(
+    "Get-CimInstance Win32_Process -Filter \"Name='electron.exe'\" | Where-Object { $_.CommandLine -match 'electron-helper' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ).then(() => true).catch(() => false);
+  return n;
+}
+
 async function hostAlive(port = DEFAULT_PORT) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/dsh-pet-7340/config`, { signal: AbortSignal.timeout(1500) });
@@ -230,20 +251,37 @@ async function cmdStart() {
 
 async function cmdStop() {
   const pid = await hostPid();
-  if (!pid) return say('- 宿主没在运行');
-  try {
-    // 必须限定 node.exe：否则命令行里恰好含 "host.mjs" 的其它进程（比如正在跑本命令的 shell）会被误杀
-    await ps("Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'host\\.mjs' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }");
-  } catch {}
-  say(ok('已停止（桌宠窗口一并关闭）'));
+  const petsBefore = await petWindows();
+  if (!pid && !petsBefore.length) return say('- 宿主没在运行，也没有桌宠窗口');
+  if (pid) {
+    try {
+      // 必须限定 node.exe：否则命令行里恰好含 "host.mjs" 的其它进程（比如正在跑本命令的 shell）会被误杀
+      await ps("Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.CommandLine -match 'host\\.mjs' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }");
+    } catch {}
+  }
+  // 桌宠窗口不一定跟着宿主一起走（宿主被强杀过、或调试时手动起过实例）→ 一并收掉，
+  // 免得桌面上留着没人管的第二只
+  if (petsBefore.length) {
+    await killPetWindows();
+    await new Promise((r) => setTimeout(r, 600));
+    say(ok(`已停止宿主与 ${petsBefore.length} 个桌宠窗口`));
+  } else {
+    say(ok('已停止（桌宠窗口一并关闭）'));
+  }
 }
 
 async function cmdStatus() {
   const alive = await hostAlive();
   const pid = await hostPid();
   const cc = await findCcSwitchProcess();
+  const pets = await petWindows();
   say(`宿主：${alive ? '运行中' : '未运行'}${pid ? ` (PID ${pid})` : ''}`);
   say(`CC Switch：${cc ? `运行中 (PID ${cc.pid})` : '未运行'}`);
+  say(
+    pets.length > 1
+      ? bad(`桌宠窗口：${pets.length} 个（多了！跑一次 stop 收干净，它会连孤儿窗口一起关）`)
+      : `桌宠窗口：${pets.length} 个${pets.length ? '' : alive ? '（宿主在跑，等它把宠物拉起来）' : ''}`,
+  );
   if (alive) {
     try {
       const r = await fetch(`http://127.0.0.1:${DEFAULT_PORT}/dsh-pet-7340/balance`, { signal: AbortSignal.timeout(20000) });

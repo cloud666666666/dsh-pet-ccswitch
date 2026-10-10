@@ -47,8 +47,8 @@ npx github:cloud666666666/dsh-pet-ccswitch install
 | 命令 | 作用 |
 | --- | --- |
 | `npx dsh-pet-ccswitch install` | 准备环境 + 注册自启 + 启动 |
-| `npx dsh-pet-ccswitch start` / `stop` / `restart` | 启停宿主（宿主会带着桌宠一起） |
-| `npx dsh-pet-ccswitch status` | 看宿主/CC Switch 状态、今日用量、余额、宠物状态 |
+| `npx dsh-pet-ccswitch start` / `stop` / `restart` | 启停宿主（宿主会带着桌宠一起）；`stop` 连**孤儿桌宠窗口**一起收 —— 宿主被强杀或手动起过实例时，桌面上可能留下不认宿主的第二只 |
+| `npx dsh-pet-ccswitch status` | 看宿主/CC Switch 状态、**桌宠窗口数**（多于 1 会明确报警）、今日用量、余额、宠物状态 |
 | `npx dsh-pet-ccswitch raise` | 看宠物养成状态（`raise 喂食动作串` 可直接在命令行上喂它，见下） |
 | `npx dsh-pet-ccswitch doctor` | 自检：CC Switch 在哪、库能不能读、缺什么 |
 | `npx dsh-pet-ccswitch patch` | 升级 dsh-pet 后重新打补丁 |

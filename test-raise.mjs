@@ -103,14 +103,24 @@ check('背包少了一份', countOf(st1, 'food', '10013006') === 1);
 check('吃东西会弹一条「吃东西」动画的事件', r1.poll()?.anim === '吃大餐' || r1.poll()?.anim === '吃Token' || r1.poll()?.anim === '吃白饭');
 
 // ---------------------------------------------------------------------------
-section('每分钟结算（属性衰减 / 成长）');
+section('每分钟结算（属性衰减 / 不吃 token 就不长）');
 const before = { hunger: st1.info.hunger, clean: st1.info.clean, growth: st1.info.growth };
 st1.lastTick = Math.floor(Date.now() / 1000) - 600; // 假装过了 10 分钟
 st1.tick();
 check('饥饿会掉', st1.info.hunger < before.hunger);
 check('清洁会掉', st1.info.clean < before.clean);
-check('成长值会涨（10 分钟 ≈ 13 上下）', st1.info.growth > before.growth + 5, `+${(st1.info.growth - before.growth).toFixed(2)}`);
+check('成长值一分不涨（自然成长已关，只吃 token）', st1.info.growth === before.growth, `+${(st1.info.growth - before.growth).toFixed(2)}`);
 check('在线时长记了 10 分钟', Math.abs(st1.info.onLineTime) >= 10);
+
+section('自然成长可以开关（PET_RAISE_NATURAL=on 恢复 qqpet 那条）');
+process.env.PET_RAISE_NATURAL = 'on';
+const rn = newRaise();
+const stn = rn.st;
+const g0n = stn.info.growth;
+stn.lastTick = Math.floor(Date.now() / 1000) - 600;
+stn.tick();
+check('打开后挂机 10 分钟确实会长（约 13）', stn.info.growth > g0n + 5, `+${(stn.info.growth - g0n).toFixed(2)}`);
+delete process.env.PET_RAISE_NATURAL;
 
 section('离线不补算（宿主/CC Switch 关掉的那段不算）');
 const g0 = st1.info.growth;
@@ -129,7 +139,28 @@ const gr0 = r2.st.info.growth;
 r2.st.lastTick = Math.floor(Date.now() / 1000) - 60;
 r2.st.tick();
 check('100 万 token 换 100 元宝（默认汇率）', r2.st.info.yb === yb0 + 100, `+${r2.st.info.yb - yb0}`);
-check('100 万 token 换 500 成长值', Math.abs(r2.st.info.growth - gr0 - 500) < 5, `+${(r2.st.info.growth - gr0).toFixed(1)}（含挂机基础成长）`);
+check('100 万 token 换 500 成长值（心情好，系数 1）', Math.abs(r2.st.info.growth - gr0 - 500) < 0.01, `+${(r2.st.info.growth - gr0).toFixed(2)}`);
+
+section('心情差 → token 换算打折');
+const r2b = newRaise();
+r2b.st.setInfo('mood', 100); // 难过档：系数 0.5
+r2b.fake.feed(1_000_000);
+const gr2 = r2b.st.info.growth;
+r2b.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+r2b.st.tick();
+check('难过时 100 万 token 只换 250 成长值', Math.abs(r2b.st.info.growth - gr2 - 250) < 0.01, `+${(r2b.st.info.growth - gr2).toFixed(2)}`);
+check('但元宝不打折（还是 100）', r2b.st.info.yb === 5000 + 100, String(r2b.st.info.yb));
+check('换算系数报得出来（0.5）', Math.abs(r2b.st.growthFactor().total - 0.5) < 1e-9, String(r2b.st.growthFactor().total));
+
+const r2c = newRaise();
+// 真开通粉钻要连到期时间一起给（06:00 的 newDay() 会按到期时间重新判定 pinkDiamond）
+r2c.st.setInfo('pinkDiamond', true);
+r2c.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 5);
+r2c.fake.feed(1_000_000);
+const gr3 = r2c.st.info.growth;
+r2c.st.lastTick = Math.floor(Date.now() / 1000) - 60;
+r2c.st.tick();
+check('粉钻让 token 换算 +12.5%', Math.abs(r2c.st.info.growth - gr3 - 562.5) < 0.01, `+${(r2c.st.info.growth - gr3).toFixed(2)}`);
 
 const r3 = newRaise();
 r3.fake.feed(50_000_000_000); // 500 亿：异常值

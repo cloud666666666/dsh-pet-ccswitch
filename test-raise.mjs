@@ -1408,7 +1408,7 @@ check('头一回开机提一句"右键有玩法"（只提一次）', (() => {
 })());
 
 // 30) 气泡容量：放不下的部分会被窗口顶上裁掉（用户看到的"显示不全"就是这个）
-const { bubbleRows, BUBBLE_ROWS, BUBBLE_UNITS, fitBubble, textUnits } = await import(url('lib/raise/engine.mjs'));
+const { bubbleRows, BUBBLE_ROWS, BUBBLE_ROWS_TALL, BUBBLE_UNITS, fitBubble, textUnits } = await import(url('lib/raise/engine.mjs'));
 const TRIM_MARK = '…（还有';
 /** 我们自己的气泡都必须在容量内（既不能超行，也不能触发兜底截断） */
 const fits = (text) => bubbleRows(text) <= BUBBLE_ROWS && !String(text).includes(TRIM_MARK);
@@ -1417,9 +1417,9 @@ const bubbleOf = (r, action) => {
   r.act(action);
   return r.st.events.at(-1)?.text ?? '';
 };
-check('「详细属性」在气泡容量内（简单宠物不该被截，满配宠物允许截但必须标明）', (() => {
+check('「详细属性」自适应：简单宠物正常排版，满配宠物切小一号但不截断', (() => {
   const simple = bubbleOf(freshRaise(), 'detail');
-  if (!fits(simple)) return false;
+  if (!fits(simple) || bubbleRows(simple) >= 9) return false; // 简单状态用标准排版就够
   const r = freshRaise();
   r.st.setInfo('pinkDiamond', true);
   r.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 5);
@@ -1427,8 +1427,8 @@ check('「详细属性」在气泡容量内（简单宠物不该被截，满配�
   r.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 7;
   r.st.save.selfGoodUseOption.clean = { id: '102020055', left: 42 };
   const rich = bubbleOf(r, 'detail');
-  // 满配（贵族 + 贴心 + 限时）确实超过 8 行 → 兜底截断并标明也算合格，只要没超出容量
-  return bubbleRows(rich) <= BUBBLE_ROWS && (rich.includes(TRIM_MARK) || fits(rich));
+  // 满配（贵族 + 贴心 + 限时）会到 9 行以上 → 桌宠切小一号排版，**不该再被截**
+  return bubbleRows(rich) <= BUBBLE_ROWS_TALL && !rich.includes(TRIM_MARK);
 })(), (() => {
   const r = freshRaise();
   r.st.setInfo('pinkDiamond', true);
@@ -1466,7 +1466,7 @@ check('成就栏 / 池塘 / 工作区 的气泡也在容量内', (() => {
 check('超长内容会被兜底截断并标明（绝不静默裁掉）', (() => {
   const long = Array.from({ length: 20 }, (_, i) => `第 ${i + 1} 行内容`).join('\n');
   const out = fitBubble(long);
-  return bubbleRows(out) <= BUBBLE_ROWS && out.includes(TRIM_MARK);
+  return bubbleRows(out) <= BUBBLE_ROWS_TALL && out.includes(TRIM_MARK);
 })());
 check('菜单里的长标签也有限度（菜单面板能滚，但一行太长会顶出面板宽度）', (() => {
   const r = achvRaise();
@@ -1517,9 +1517,9 @@ function sweepBubbles() {
       const t = r.st.events.at(-1)?.text;
       if (!t) continue;
       const rendered = bubbleRows(t);
-      if (rendered > BUBBLE_ROWS) {
+      if (rendered > BUBBLE_ROWS_TALL) {
         const worst = t.split('\n').sort((a, b) => textUnits(b) - textUnits(a))[0];
-        bad.push(`${action}(${tag}): 渲染 ${rendered} 行（上限 ${BUBBLE_ROWS}）· 最长一行「${worst.slice(0, 22)}」${textUnits(worst).toFixed(1)} 单位`);
+        bad.push(`${action}(${tag}): 渲染 ${rendered} 行（上限 ${BUBBLE_ROWS_TALL}）· 最长一行「${worst.slice(0, 22)}」${textUnits(worst).toFixed(1)} 单位`);
       }
     }
   }

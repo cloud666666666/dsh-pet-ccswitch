@@ -1256,6 +1256,151 @@ check('开学/上课报属性与课时进度', (() => {
   return t.includes('课时') && (t.includes('智力') === false) && /语文 \d+\/9 课时/.test(t);
 })(), JSON.stringify(lastText(freshRaise())));
 
+// 29) 「用户不知道的东西」总清查：属性、贵族作用、门槛缺口、对症药、首启提示
+check('详细属性里能看到智力/魅力/武力/幸运/疲劳（原来界面上一个字都没有）', (() => {
+  const rd2 = freshRaise();
+  rd2.st.info.intel = 33;
+  rd2.st.info.charm = 44;
+  rd2.st.info.strong = 55;
+  rd2.st.events.length = 0;
+  rd2.act('detail');
+  const t = rd2.st.events.at(-1)?.text ?? '';
+  return t.includes('智力 33') && t.includes('魅力 44') && t.includes('武力 55') && t.includes('幸运') && t.includes('疲劳');
+})(), JSON.stringify((() => {
+  const r = freshRaise();
+  r.st.events.length = 0;
+  r.act('detail');
+  return r.st.events.at(-1)?.text;
+})()));
+check('详细属性里也会报贵族到期与生效中的限时物品', (() => {
+  const rd3 = freshRaise();
+  rd3.st.setInfo('pinkDiamond', true);
+  rd3.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 3);
+  rd3.st.save.selfGoodUseOption.clean = { id: '102020055', left: 42 };
+  rd3.st.events.length = 0;
+  rd3.act('detail');
+  const t = rd3.st.events.at(-1)?.text ?? '';
+  return t.includes('粉钻') && t.includes('天') && t.includes('柔爽洗发液') && t.includes('42 分钟');
+})(), JSON.stringify((() => {
+  const r = freshRaise();
+  r.st.events.length = 0;
+  r.act('detail');
+  return r.st.events.at(-1)?.text;
+})()));
+check('「粉钻有什么用」点开就念好处', (() => {
+  const rp = freshRaise();
+  rp.st.events.length = 0;
+  rp.act('pd:help');
+  const t = rp.st.events.at(-1)?.text ?? '';
+  return t.includes('八折') && t.includes('成长') && t.includes('池塘');
+})(), JSON.stringify((() => {
+  const r = freshRaise();
+  r.st.events.length = 0;
+  r.act('pd:help');
+  return r.st.events.at(-1)?.text;
+})()));
+check('「贴心宝贝有什么用」点开就念好处', (() => {
+  const rh2 = freshRaise();
+  rh2.st.events.length = 0;
+  rh2.act('heart:help');
+  const t = rh2.st.events.at(-1)?.text ?? '';
+  return t.includes('自己照顾自己') && t.includes('1.1');
+})());
+check('贵族那一栏里有「有什么用」两条', (() => {
+  const sec = freshRaise().menu().find((s) => s.label.includes('贵族'));
+  return sec.children.filter((c) => c.label.startsWith('❓')).length === 2;
+})());
+check('状态里贵族带剩余天数（不然不知道还剩几天）', (() => {
+  const rs2 = freshRaise();
+  rs2.st.setInfo('pinkDiamond', true);
+  rs2.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 3);
+  rs2.st.info.sweetHeart = true;
+  rs2.st.info.sweetHeartOverTime = Math.floor(Date.now() / 1000) + 86400 * 2;
+  const row = statusLines(rs2.st).find((l) => l.includes('元宝')) ?? '';
+  // 天数按 06:00 换日算，所以"现在 +3 天"会显示成 4 天 —— 断言只要形如「粉钻 N天」
+  return /粉钻 \d+天/.test(row) && /贴心 \d+天/.test(row);
+})(), (() => {
+  const r = freshRaise();
+  r.st.setInfo('pinkDiamond', true);
+  r.st.setInfo('PDiamondExpirationDate', Math.floor(Date.now() / 1000) + 86400 * 3);
+  return statusLines(r.st).find((l) => l.includes('元宝'));
+})());
+check('打工菜单里写清了属性/学历门槛', (() => {
+  const sec = freshRaise().menu().find((s) => s.label.includes('打工'));
+  const actor = sec.children.find((c) => c.raise === 'work:yy');
+  return /智力800/.test(actor.label) && /魅力800/.test(actor.label) && /学历/.test(actor.label);
+})(), (() => {
+  const sec = freshRaise().menu().find((s) => s.label.includes('打工'));
+  return sec.children.filter((c) => c.raise === 'work:yy' || c.raise === 'work:nwg').map((c) => c.label).join(' | ');
+})());
+check('属性门槛没过时说清缺哪个、差多少', (() => {
+  const rw3 = freshRaise();
+  rw3.st.info.growth = 200000; // 等级拉高，绕开等级门槛
+  rw3.st.syncLevel();
+  rw3.st.info.intel = 5;
+  rw3.st.info.strong = 7;
+  rw3.st.info.charm = 9;
+  rw3.st.events.length = 0;
+  rw3.act('work:yy'); // 演员：智力≥800 武力≥1000 魅力≥800
+  const t = rw3.st.events.at(-1)?.text ?? '';
+  return t.includes('智力 ≥ 800') && t.includes('我现在 5') && t.includes('武力 ≥ 1000') && t.includes('魅力 ≥ 800');
+})(), JSON.stringify((() => {
+  const r = freshRaise();
+  r.st.info.growth = 200000;
+  r.st.syncLevel();
+  r.st.events.length = 0;
+  r.act('work:yy');
+  return r.st.events.at(-1)?.text;
+})()));
+check('学历门槛没过时说要什么学历', (() => {
+  const rw4 = freshRaise();
+  rw4.st.info.growth = 200000;
+  rw4.st.syncLevel();
+  rw4.st.events.length = 0;
+  rw4.act('work:nwg'); // 泥瓦工：要「小学劳技」学历
+  const t = rw4.st.events.at(-1)?.text ?? '';
+  return t.includes('要学历') && t.includes('劳技');
+})(), JSON.stringify((() => {
+  const r = freshRaise();
+  r.st.info.growth = 200000;
+  r.st.syncLevel();
+  r.st.events.length = 0;
+  r.act('work:nwg');
+  return r.st.events.at(-1)?.text;
+})()));
+check('等级不够时报"要几级、我现在几级"', (() => {
+  const rw5 = freshRaise(); // 1 级
+  rw5.st.events.length = 0;
+  rw5.act('work:bz'); // 要 2 级
+  return (rw5.st.events.at(-1)?.text ?? '').includes('要 2 级，我现在 1 级');
+})());
+check('生病时吃药那栏标出哪个对症', (() => {
+  const ril = achvRaise();
+  ril.st.setActivity('ill', '0-');
+  ril.st.setInfo('health', 3); // 病线 0 + 健康 3 → 支气管炎，对症的是甘草剂（20003）
+  addG(ril.st, 'medicine', '20003', 1);
+  const kids = ril.menu()[0].children.find((c) => c.label.includes('吃药')).children;
+  const right = kids.find((k) => k.label.includes('对症 ✓'));
+  const wrong = kids.find((k) => k.label.includes('不对症'));
+  return Boolean(right) && right.raise.endsWith('20003') && Boolean(wrong);
+})(), (() => {
+  const r = achvRaise();
+  r.st.setActivity('ill', '0-');
+  r.st.setInfo('health', 3);
+  addG(r.st, 'medicine', '20003', 1);
+  const kids = r.menu()[0].children.find((c) => c.label.includes('吃药')).children;
+  return kids.map((k) => k.label).join(' | ');
+})());
+check('头一回开机提一句"右键有玩法"（只提一次）', (() => {
+  const ron = freshRaise();
+  ron.st.events.length = 0;
+  ron.st.daily();
+  const first = ron.st.events.some((e) => e.text.includes('右键'));
+  ron.st.events.length = 0;
+  ron.st.daily(); // 第二次不该再说
+  return first && !ron.st.events.some((e) => e.text.includes('右键'));
+})());
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

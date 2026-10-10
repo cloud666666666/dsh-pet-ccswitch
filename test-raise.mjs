@@ -1146,6 +1146,49 @@ check('换算系数是 1 的时候不啰嗦（不占行）', (() => {
   return !rf6.text().includes('token 换算');
 })());
 
+// 27) 领奖要说清领到了什么
+const { rewardText } = await import(url('lib/raise/items.mjs'));
+check('奖励清单：数量为 1 不写 ×1，多个用空格隔开', rewardText([{ name: '小笼包', num: 1 }, { name: '元宝', num: 50 }]) === '\n小笼包　元宝 ×50', JSON.stringify(rewardText([{ name: '小笼包', num: 1 }, { name: '元宝', num: 50 }])));
+check('奖励清单：空的就不占行', rewardText([]) === '' && rewardText(undefined) === '');
+check('交任务时气泡里列出了领到的东西', (() => {
+  const rtask = achvRaise();
+  for (let i = 0; i < 5; i++) rtask.act('pet:click'); // 逗逗我第一条：5 次
+  rtask.st.events.length = 0;
+  rtask.act('claim:ddw:0');
+  const txt = rtask.st.events.at(-1)?.text ?? '';
+  return txt.includes('完成') && /\n.+\S/.test(txt) && txt.includes('×') === false; // 奖励是 ×1 的，所以不带 ×
+})(), JSON.stringify((() => {
+  const r7 = achvRaise();
+  for (let i = 0; i < 5; i++) r7.act('pet:click');
+  r7.st.events.length = 0;
+  r7.act('claim:ddw:0');
+  return r7.st.events.at(-1)?.text;
+})()));
+check('签到 / 在线奖励 / 抽成长值的气泡也会列东西', (() => {
+  const r8 = achvRaise();
+  r8.st.events.length = 0;
+  r8.act('sign:growth');
+  const txt = r8.st.events.at(-1)?.text ?? '';
+  return txt.includes('\n') && (txt.includes('成长值') || txt.includes('×'));
+})(), JSON.stringify((() => {
+  const r9 = achvRaise();
+  r9.st.events.length = 0;
+  r9.act('sign:growth');
+  return r9.st.events.at(-1)?.text;
+})()));
+check('菜单里"可领"的任务会把奖励名字摆出来', (() => {
+  const r10 = achvRaise();
+  for (let i = 0; i < 5; i++) r10.act('pet:click');
+  const row = r10.menu().find((s) => s.label.includes('任务')).children[1].children[0];
+  return row.label.includes('🎁') && row.label.includes('→'), row.label;
+})());
+check('邮件菜单里也看得见附件是什么', (() => {
+  const r11 = achvRaise();
+  mail.deliverMails(r11.st); // 欢迎信（带附件）
+  const sec = r11.menu().find((s) => s.label.includes('邮件'));
+  return sec.children.some((c) => c.label.startsWith('📦') && c.label.includes('（') && c.label.includes('）')), JSON.stringify(sec.children.map((c) => c.label));
+})());
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

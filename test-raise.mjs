@@ -1189,6 +1189,73 @@ check('邮件菜单里也看得见附件是什么', (() => {
   return sec.children.some((c) => c.label.startsWith('📦') && c.label.includes('（') && c.label.includes('）')), JSON.stringify(sec.children.map((c) => c.label));
 })());
 
+// 28) 花钱/挣钱的地方都要报账（跟属性变化同一套格式）
+const lastText = (r) => r.st.events.at(-1)?.text ?? '';
+check('打工收工报工资', (() => {
+  const rw = freshRaise();
+  rw.st.info.growth = 20000;
+  rw.st.syncLevel();
+  rw.act('work:bz'); // 搬砖 10 元宝
+  rw.st.events.length = 0;
+  advanceTask(rw.st, 30);
+  return /元宝 \d+→\d+/.test(lastText(rw));
+})(), JSON.stringify(lastText(freshRaise())));
+check('买东西报账并说清买的什么', (() => {
+  const rb = freshRaise();
+  rb.st.setInfo('yb', 5000);
+  rb.st.events.length = 0;
+  rb.act('buy:food:100010032');
+  const t = lastText(rb);
+  return t.includes('小笼包') && t.includes('元宝 5000→3000');
+})(), JSON.stringify(lastText(freshRaise())));
+check('喂鱼报扣费与鱼的进度', (() => {
+  const rf = freshRaise();
+  rf.st.setInfo('yb', 1000);
+  rf.act('fish:buy:2');
+  rf.st.events.length = 0;
+  rf.act('fish:feed:' + rf.st.pond.fishs[0].id);
+  const t = lastText(rf);
+  return t.includes('元宝 998→988') && t.includes('还需') && t.includes('金鱼');
+})(), JSON.stringify(lastText(freshRaise())));
+check('买鱼苗报扣费与它的成长时间', (() => {
+  const rf = freshRaise();
+  rf.st.setInfo('yb', 1000);
+  rf.st.events.length = 0;
+  rf.act('fish:buy:2');
+  const t = lastText(rf);
+  return t.includes('金鱼') && t.includes('元宝 1000→998') && t.includes('还需');
+})(), JSON.stringify(lastText(freshRaise())));
+check('在线奖励第二次起报扣了多少', (() => {
+  const ra2 = achvRaise();
+  ra2.st.setInfo('yb', 5000);
+  signin.tickGift(ra2.st, 20); // 倒计时走完
+  ra2.st.events.length = 0;
+  ra2.act('sign:gift'); // 第一次免费
+  signin.tickGift(ra2.st, 20);
+  ra2.st.events.length = 0;
+  ra2.act('sign:gift'); // 第二次 100 元宝
+  const t = lastText(ra2);
+  return t.includes('花了 100 元宝') && /元宝 \d+→\d+/.test(t);
+})(), JSON.stringify(lastText(achvRaise())));
+check('完成旅游成就报扣费', (() => {
+  const rt = freshRaise();
+  rt.st.save.gameSaveDatas.travel_china = [{ name: '北京市', value: 1 }];
+  rt.st.setInfo('yb', 20000);
+  rt.st.events.length = 0;
+  rt.act('trip:finish');
+  return lastText(rt).includes('元宝 20000→11112');
+})(), JSON.stringify(lastText(freshRaise())));
+check('开学/上课报属性与课时进度', (() => {
+  const rs = freshRaise();
+  rs.st.info.growth = 20000;
+  rs.st.syncLevel();
+  rs.act('study:xx-chinese');
+  rs.st.events.length = 0;
+  advanceTask(rs.st, 45);
+  const t = lastText(rs);
+  return t.includes('课时') && (t.includes('智力') === false) && /语文 \d+\/9 课时/.test(t);
+})(), JSON.stringify(lastText(freshRaise())));
+
 // ---------------------------------------------------------------------------
 fs.rmSync(HOME, { recursive: true, force: true });
 console.log(`\n通过 ${pass}，失败 ${fail}\n`);

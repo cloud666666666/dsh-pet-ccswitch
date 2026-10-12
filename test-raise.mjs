@@ -218,6 +218,137 @@ check('用还魂丹后健康回到 5', st4.info.health === 5);
 check('复活后病标记清掉', st4.activity('ill') === null);
 
 // ---------------------------------------------------------------------------
+section('见底了自己动手（autoCare）');
+/** 让它某一项见底，再走一分钟的账（先把三项都拉满，免得别的项一起见底干扰断言） */
+const bottom = (st, stat) => {
+  for (const s of ['hunger', 'clean', 'mood']) st.setInfo(s, st.meta[`${s}Max`]);
+  st.setInfo(stat, 0);
+  st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  st.grow();
+};
+const said = (st, needle) => st.events.filter((e) => (e.text || '').includes(needle));
+
+check('饿到 0：自己翻背包吃掉一件（少一件、饥饿回来了、气泡说清用了啥）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.food = [];
+  addGood(st, 'food', '100010032', 2); // 小笼包
+  st.setInfo('yb', 0); // 顺带证明它没有偷偷花钱买
+  st.events.length = 0;
+  bottom(st, 'hunger');
+  const ev = said(st, '自己翻出')[0];
+  return (
+    countOf(st, 'food', '100010032') === 1 &&
+    st.info.hunger > 0 &&
+    Boolean(ev) &&
+    ev.text.includes('小笼包') &&
+    /饥饿 0→\d+/.test(ev.text) &&
+    st.info.yb === 0
+  );
+})(), JSON.stringify(freshRaise().st.events.at(-1)?.text ?? ''));
+
+check('没到 0 就不碰背包（还剩就留给主人）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.food = [];
+  addGood(st, 'food', '100010032', 1);
+  const before = countOf(st, 'food', '100010032');
+  for (const s of ['hunger', 'clean', 'mood']) st.setInfo(s, st.meta[`${s}Max`]);
+  st.setInfo('hunger', 500);
+  st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  st.grow();
+  return countOf(st, 'food', '100010032') === before && st.info.hunger > 0;
+})());
+
+check('脏到 0：自己去洗（用背包里的日用品）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.clean = []; // 初始就有的浴巾/雨刷先拿走，免得断言错东西
+  addGood(st, 'clean', '102020003', 1);
+  st.events.length = 0;
+  bottom(st, 'clean');
+  const ev = said(st, '自己')[0];
+  return countOf(st, 'clean', '102020003') === 0 && st.info.clean > 0 && /清洁 0→\d+/.test(ev?.text ?? '');
+})(), '应该用掉舒爽喷湿器并把清洁度拉回 200');
+
+check('闷到 0：自己去玩玩具', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.toy = [];
+  addGood(st, 'toy', 't0002', 1);
+  st.events.length = 0;
+  bottom(st, 'mood');
+  return st.info.mood > 0 && countOf(st, 'toy', 't0002') === 0 && said(st, '自己').length === 1;
+})());
+
+check('背包里没有这一种：说一声（一次，不刷屏）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.clean = []; // 一件日用品都没有
+  st.events.length = 0;
+  bottom(st, 'clean');
+  bottom(st, 'clean');
+  bottom(st, 'clean');
+  const evs = said(st, '商店');
+  return evs.length === 1 && evs[0].text.includes('日用品');
+})(), JSON.stringify(freshRaise().st.events.map((e) => e.text)));
+
+check('缓过来之后再缺一次：会再提醒一次', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.clean = [];
+  st.events.length = 0;
+  bottom(st, 'clean');
+  addGood(st, 'clean', '102020003', 1); // 主人买回来了
+  bottom(st, 'clean'); // 先用掉 → clean > 0 → 提醒复位
+  st.save.selfGoodDatas.clean = [];
+  const seen = said(st, '商店').length;
+  bottom(st, 'clean');
+  return seen === 1 && said(st, '商店').length === 2;
+})());
+
+check('先吃再判病：同一轮里喂饱了就不算它"饿着"（有粮不生病 / 没粮会生病）', (() => {
+  const rnd = Math.random;
+  Math.random = () => 0; // 让 healthRoll 必定命中：疲劳 > 0 就一定生病
+  try {
+    const fed = freshRaise();
+    fed.st.save.selfGoodDatas.food = [];
+    addGood(fed.st, 'food', '102010076', 1); // 锦绣大闸蟹：直接把饥饿填满
+    bottom(fed.st, 'hunger');
+    const hungry = freshRaise();
+    hungry.st.save.selfGoodDatas.food = []; // 没粮：只能饿着
+    bottom(hungry.st, 'hunger');
+    return fed.st.info.health === 5 && hungry.st.info.health === 4 && hungry.st.activity('ill');
+  } finally {
+    Math.random = rnd;
+  }
+})(), '被喂的那只健康应保持 5，没粮的那只会掉到 4');
+
+check('关掉开关（PET_RAISE_AUTOCARE=off）就一口都不动', (() => {
+  process.env.PET_RAISE_AUTOCARE = 'off';
+  try {
+    const r = freshRaise();
+    const st = r.st;
+    st.save.selfGoodDatas.food = [];
+    addGood(st, 'food', '100010032', 1);
+    bottom(st, 'hunger');
+    return countOf(st, 'food', '100010032') === 1 && st.info.hunger === 0;
+  } finally {
+    delete process.env.PET_RAISE_AUTOCARE;
+  }
+})());
+
+check('死着就别吃了（还魂丹另说）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.food = [];
+  addGood(st, 'food', '100010032', 1);
+  st.setInfo('health', 0);
+  st.autoCare();
+  return countOf(st, 'food', '100010032') === 1;
+})());
+
+// ---------------------------------------------------------------------------
 section('元宝 / 买卖 / 等级门槛');
 const r5 = newRaise();
 const st5 = r5.st;
@@ -702,11 +833,15 @@ const stubFetch = (handler) => {
 const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj, text: async () => JSON.stringify(obj) });
 
 // 日历：holiday-cn 源（节假日查表 + 节气本机算）
+// 用"今天"造这份假数据 —— 写死某一天的话，跑测试的那天一到就红（踩过：10-10 写的，10-12 就挂了）
+const pad2 = (n) => String(n).padStart(2, '0');
+const _d = new Date();
+const todayStr = `${_d.getFullYear()}-${pad2(_d.getMonth() + 1)}-${pad2(_d.getDate())}`;
 const holidayJson = {
-  year: 2026,
+  year: _d.getFullYear(),
   days: [
     { name: '国庆节', date: '2026-10-01', isOffDay: true },
-    { name: '国庆节', date: '2026-10-10', isOffDay: false },
+    { name: '国庆节', date: todayStr, isOffDay: false }, // 今天：调休上班
   ],
 };
 stubFetch((u) => {
@@ -716,7 +851,7 @@ stubFetch((u) => {
 const cal2 = cal.createCalendar({ mode: 'holiday-cn', log: () => {} });
 const todayEntry = await cal2.load();
 globalThis.fetch = realFetch;
-check('holiday-cn 源：今天（2026-10-10 是调休班）被认成「国庆节，要上班」', todayEntry?.holiday?.name === '国庆节' && todayEntry.holiday.off === false, JSON.stringify(todayEntry));
+check('holiday-cn 源：调休上班那天被认成「国庆节，要上班」', todayEntry?.holiday?.name === '国庆节' && todayEntry.holiday.off === false, JSON.stringify(todayEntry));
 check('日历那句写成「国庆节调休上班」', cal.dayText(cal2).includes('国庆节调休上班'), cal.dayText(cal2));
 check('调休那天不会算成放假（任务/邮件都看这个）', cal.festival(cal2.today()).includes('调休'));
 

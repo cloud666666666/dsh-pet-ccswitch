@@ -429,6 +429,45 @@ check('死着就别吃了（还魂丹另说）', (() => {
   return countOf(st, 'food', '100010032') === 1;
 })());
 
+check('病了会自己去看病（健康 4 → 5，钱按原版那套扣）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.setActivity('ill', '0-');
+  st.setInfo('health', 4);
+  st.setInfo('yb', 5000);
+  st.events.length = 0;
+  st.autoCare();
+  return st.info.health === 5 && st.info.yb < 5000 && st.activity('ill') === null && st.events.length > 0 && st.events.some((e) => e.text.includes('元宝'));
+})());
+
+check('钱不够底钱就不看病（也不刷屏）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.setActivity('ill', '0-');
+  st.setInfo('health', 4);
+  st.setInfo('yb', 500);
+  st.events.length = 0;
+  st.autoCare();
+  st.autoCare();
+  st.autoCare();
+  return st.info.health === 4 && st.info.yb === 500 && st.events.length === 0;
+})());
+
+check('看好了之后再生病，还会自己去看（记号要清）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.setInfo('yb', 5000);
+  st.setActivity('ill', '0-');
+  st.setInfo('health', 4);
+  st.autoCare(); // 治好 → 5
+  const cured = st.info.health === 5;
+  st.setActivity('ill', '0-');
+  st.setInfo('health', 4); // 又病了
+  const yb0 = st.info.yb;
+  st.autoCare();
+  return cured && st.info.health === 5 && st.info.yb < yb0;
+})());
+
 // ---------------------------------------------------------------------------
 section('元宝 / 买卖 / 等级门槛');
 const r5 = newRaise();

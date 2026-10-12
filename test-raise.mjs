@@ -26,6 +26,7 @@ const url = (rel) => pathToFileURL(path.join(HERE, rel)).href;
 const { createRaise } = await import(url('lib/raise/index.mjs'));
 const { levelOf, stageOf } = await import(url('lib/raise/level.mjs'));
 const { goodOf, countOf } = await import(url('lib/raise/goods.mjs'));
+const { price: priceOf } = await import(url('lib/raise/items.mjs'));
 const { createTokenMeter } = await import(url('lib/raise/tokens.mjs'));
 
 // ---------------------------------------------------------------------------
@@ -281,10 +282,11 @@ check('闷到 0：自己去玩玩具', (() => {
   return st.info.mood > 0 && countOf(st, 'toy', 't0002') === 0 && said(st, '自己').length === 1;
 })());
 
-check('背包里没有这一种：说一声（一次，不刷屏）', (() => {
+check('背包里没有这一种、又不让花钱：说一声（一次，不刷屏）', (() => {
   const r = freshRaise();
   const st = r.st;
   st.save.selfGoodDatas.clean = []; // 一件日用品都没有
+  st.setInfo('yb', 0); // 也没钱买
   st.events.length = 0;
   bottom(st, 'clean');
   bottom(st, 'clean');
@@ -297,6 +299,7 @@ check('缓过来之后再缺一次：会再提醒一次', (() => {
   const r = freshRaise();
   const st = r.st;
   st.save.selfGoodDatas.clean = [];
+  st.setInfo('yb', 0);
   st.events.length = 0;
   bottom(st, 'clean');
   addGood(st, 'clean', '102020003', 1); // 主人买回来了
@@ -306,6 +309,83 @@ check('缓过来之后再缺一次：会再提醒一次', (() => {
   bottom(st, 'clean');
   return seen === 1 && said(st, '商店').length === 2;
 })());
+
+check('背包没货但有钱：自己买最便宜的那件、买够为止（一次买一批，只弹一条气泡）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.food = [];
+  st.setInfo('yb', 5000);
+  const cheap = st.cheapestBuyable('food');
+  const unit = Math.round(priceOf(cheap, st));
+  st.events.length = 0;
+  bottom(st, 'hunger');
+  const ev = said(st, '去买')[0];
+  const spent = 5000 - st.info.yb;
+  return (
+    st.info.hunger >= st.meta.hungerMax / 2 && // 补到一半以上：不再挂在"随时会病"那条线上
+    st.fatigue() === 0 &&
+    spent > 0 &&
+    spent % unit === 0 && // 只花在最便宜那件上
+    spent <= 60 * unit &&
+    countOf(st, 'food', cheap.id) === 0 && // 买来就用掉，不在背包里积压
+    Boolean(ev) &&
+    ev.text.includes(`买了 ${spent / unit} 份「${cheap.name}」`) &&
+    ev.text.includes(`${spent} 元宝`) &&
+    said(st, '去买').length === 1 // 11 份不吐 11 条气泡
+  );
+})(), '应该补到疲劳线以上（上限的一半），且只买最便宜的那件');
+
+check('只剩底钱就不买了（留够 1000 元宝，不把家底花光）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  st.save.selfGoodDatas.food = [];
+  st.setInfo('yb', 1000);
+  st.events.length = 0;
+  bottom(st, 'hunger');
+  return st.info.yb === 1000 && st.info.hunger === 0 && said(st, '商店').length === 1;
+})(), '元宝不够留底 → 退回"提醒主人"那条路');
+
+check('关掉 autoBuy：有钱也不买', (() => {
+  process.env.PET_RAISE_AUTOBUY = 'off';
+  try {
+    const r = freshRaise();
+    const st = r.st;
+    st.save.selfGoodDatas.food = [];
+    st.setInfo('yb', 5000);
+    st.events.length = 0;
+    bottom(st, 'hunger');
+    return st.info.yb === 5000 && said(st, '商店').length === 1;
+  } finally {
+    delete process.env.PET_RAISE_AUTOBUY;
+  }
+})());
+
+check('衰减倍率：默认按原版掉（一分钟 2~3 点）', (() => {
+  const r = freshRaise();
+  const st = r.st;
+  for (const s of ['hunger', 'clean', 'mood']) st.setInfo(s, st.meta[`${s}Max`]);
+  const h0 = st.info.hunger;
+  st.lastTick = Math.floor(Date.now() / 1000) - 60;
+  st.tick();
+  const drop = h0 - st.info.hunger;
+  return drop >= 2 && drop <= 3;
+})());
+
+check('衰减倍率：decay=0.25 → 一分钟只掉 0.5~0.75（满格撑四天多）', (() => {
+  process.env.PET_RAISE_DECAY = '0.25';
+  try {
+    const r = freshRaise();
+    const st = r.st;
+    for (const s of ['hunger', 'clean', 'mood']) st.setInfo(s, st.meta[`${s}Max`]);
+    const h0 = st.info.hunger;
+    st.lastTick = Math.floor(Date.now() / 1000) - 60;
+    st.tick();
+    const drop = h0 - st.info.hunger;
+    return drop >= 0.5 && drop <= 0.76;
+  } finally {
+    delete process.env.PET_RAISE_DECAY;
+  }
+})(), 'rand(2,3)×0.25 = 0.5 或 0.75');
 
 check('先吃再判病：同一轮里喂饱了就不算它"饿着"（有粮不生病 / 没粮会生病）', (() => {
   const rnd = Math.random;
@@ -317,6 +397,7 @@ check('先吃再判病：同一轮里喂饱了就不算它"饿着"（有粮不�
     bottom(fed.st, 'hunger');
     const hungry = freshRaise();
     hungry.st.save.selfGoodDatas.food = []; // 没粮：只能饿着
+    hungry.st.setInfo('yb', 0); // 也没钱买（不然它会自己买来吃，那就不叫"没粮"了）
     bottom(hungry.st, 'hunger');
     return fed.st.info.health === 5 && hungry.st.info.health === 4 && hungry.st.activity('ill');
   } finally {

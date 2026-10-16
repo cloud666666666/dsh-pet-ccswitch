@@ -69,6 +69,24 @@ npx dsh-pet-ccswitch raise import <存档>   # 把 qqpet 养的宠物搬过来
 npx dsh-pet-ccswitch raise --menu          # 把当前菜单树打出来（里面有所有动作串）
 ```
 
+## 升级
+
+两条独立的线：
+
+- **升级工具本身**：重新跑一遍 `install` 就行（`npx dsh-pet-ccswitch install`；
+  从仓库装的话 `npx github:cloud666666666/dsh-pet-ccswitch install` 每次都拉最新 `main`）。
+- **升级 dsh-pet 本身**：改 `package.json` 里 `dsh-pet` 的版本再 `install` ——
+  插件目录里的版本跟依赖对不上时会**自动重拷并重打补丁**（以前只在"没有"时才拷，
+  改了依赖重装会静默沿用旧插件，补丁打不上还看不出来）。
+
+两个坑先说在前面：
+
+- 0.x 的 `^` **只放行同一个 minor**：现在写的是 `^0.2.11`，装不到 `0.3.x`。想跨 minor 得手改版本号。
+- **dsh-pet 0.3.x 目前还没适配**：0.3 起气泡改成"单槽模型"、菜单与事件代码也跟着动过，
+  本仓库的补丁表（`lib/patch.mjs`，21 条）实测在 0.3.7 上只有 9 条认得出来 ——
+  跨过去会退化成"气泡不显示用量、右键菜单不指向 CC Switch、养成广播不通"。
+  跨版本前先跑一次 `patch` 看 `failed` 是不是 0；认不出只会告警并退化成原版行为，不会把桌宠搞坏。
+
 ## 养成
 
 桌宠不只是挂件了。养成这套玩法**整套搬自 [qqpet](https://github.com/AnkioTomas/qqpet)**

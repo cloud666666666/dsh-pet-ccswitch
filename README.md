@@ -28,12 +28,11 @@
 ## 安装
 
 ```sh
-npx github:cloud666666666/dsh-pet-ccswitch install
+npx dsh-pet-ccswitch install
 ```
 
-> 包**尚未发布到 npm registry**，所以 `npx dsh-pet-ccswitch` 暂时不通；用上面的 `github:` 写法
-> 效果完全一样（npm 会直接从仓库拉取）。**下文所有 `npx dsh-pet-ccswitch <命令>` 在发布前
-> 都请写成 `npx github:cloud666666666/dsh-pet-ccswitch <命令>`。**
+> 不想（或还没）从 npm 装，也可以直接从仓库跑：`npx github:cloud666666666/dsh-pet-ccswitch install`，
+> 效果一样（npm 会现场拉取仓库）。下文所有命令按需把 `npx dsh-pet-ccswitch` 换成这个写法即可。
 
 `install` 会依次做完这些事（都会跳过已完成的部分，可重复跑）：
 
@@ -379,12 +378,18 @@ npx dsh-pet-ccswitch raise config calendar=holiday-cn weather=on
 
 ## 致谢
 
-- 桌宠本体是 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（MIT），本包只做适配与宿主。
-- **养成玩法搬自 [qqpet](https://github.com/AnkioTomas/qqpet)**（QQ 宠物跨平台复刻，GPL-3.0）：
+- 桌宠本体是 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（MIT），本包只做适配与宿主：
+  依赖它、在安装时对**你自己机器上那份副本**打补丁，不随包分发它的代码。
+- **养成玩法搬自 [qqpet](https://github.com/AnkioTomas/qqpet)**（QQ 宠物跨平台复刻，GPL-3.0-only）：
   等级公式、属性衰减、疲劳与生病、物品表（990 件）、工作/课程/旅游点、任务与台词、
   疾病与死亡台词、鱼苗表等等都是照它的源码搬过来的，用
   `node scripts/import-qqpet-data.mjs <qqpet 仓库路径>` 可以重新导出这些数据表。
-  它的美术资源（QQ 原版形象、SWF、旅行照片）没有搬，版权归腾讯与《旅行青蛙·中国之旅》所有。
-- ⚠️ 许可提醒：qqpet 是 **GPL-3.0**，本项目是 MIT。两边都是同一台机器上的个人项目时问题不大，
-  但**如果你要发布/分发这个包，先确认你有权把 GPL 代码与那份数据表放进 MIT 项目里**，
-  或者把这里对应的部分也按 GPL-3.0 发布。
+- 两边的**美术资源都没有随包分发**：QQ 原版形象/SWF/旅行照片版权归腾讯与
+  《旅行青蛙·中国之旅》所有 —— 需要它们的功能（相簿、池塘、物品图标、成就徽章）
+  在你指定本机素材目录（`assetsFrom`）之后，从**本地**读取。
+
+## 许可证
+
+本包按 **GPL-3.0-only** 发布（见 [LICENSE](LICENSE)）—— 因为养成那部分（数据表与玩法逻辑）
+移植自同样按 GPL-3.0 发布的 qqpet，按其条款整个作品用同一许可证。
+你可以自由使用、修改、再分发；再分发时也要保持 GPL-3.0。

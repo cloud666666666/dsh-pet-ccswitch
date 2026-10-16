@@ -10,6 +10,7 @@
     "bin",
     "lib",
     "assets",
+    "scripts",
     "README.md"
   ],
   "engines": {
@@ -31,7 +32,11 @@
     "electron",
     "windows"
   ],
-  "license": "MIT",
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/cloud666666666/dsh-pet-ccswitch#readme",
+  "bugs": {
+    "url": "https://github.com/cloud666666666/dsh-pet-ccswitch/issues"
+  },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
     "access": "public"
